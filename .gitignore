@@ -1,0 +1,15 @@
+node_modules/
+test-results/
+playwright-report/
+.DS_Store
+*.log
+.env
+.env.*
+# Niemals echte Personendaten committen:
+seed-schueler.sql
+seed-lehrer.sql
+lehrer-kuerzel.csv
+schueler-ohne-feste-klasse.csv
+beispiel-schuelerbrief.pdf
+*Schülerliste*
+*Musterlösung*

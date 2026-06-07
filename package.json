@@ -1,0 +1,20 @@
+{
+  "name": "krs-projektwahl-2026",
+  "version": "23.0.0",
+  "private": true,
+  "description": "KRS Projektwahl 2026 — Admin-Dashboard + Schüler-App (Single-File HTML). Dieses package.json dient nur dem Playwright-Test-Setup.",
+  "scripts": {
+    "serve": "http-server . -p 4173 -c-1 --silent",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui",
+    "test:install": "playwright install --with-deps chromium",
+    "test:list": "playwright test --list",
+    "test:typecheck": "tsc --project tsconfig.test.json"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.47.0",
+    "http-server": "^14.1.1",
+    "typescript": "^6.0.3"
+  }
+}
