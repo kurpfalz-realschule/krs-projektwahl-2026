@@ -24,7 +24,13 @@ test.describe('Flow: KlassenlehrerView', () => {
 
   test('Tabelle zeigt nur Schüler der eigenen Klasse', async ({ page }) => {
     await loginAs(page, 'klassenlehrer');
-    await page.waitForTimeout(200);
+    await seedMockData(page, {
+      schueler: [
+        { code: '7A-XXXX', vorname: 'Test', nachname: 'Eins', klasse: '7a', klassenstufe: 7, hat_gewaehlt: false, zuteilung: null },
+        { code: '7A-YYYY', vorname: 'Test', nachname: 'Zwei', klasse: '7a', klassenstufe: 7, hat_gewaehlt: true,  zuteilung: null },
+        { code: '8B-ZZZZ', vorname: 'Test', nachname: 'Drei', klasse: '8b', klassenstufe: 8, hat_gewaehlt: false, zuteilung: null },
+      ],
+    });
 
     const rows = page.locator('[data-testid="klassenlehrer-row"]');
     const count = await rows.count();
