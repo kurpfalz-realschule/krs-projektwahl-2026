@@ -1,6 +1,6 @@
 # Handover: KRS Projektwahl 2026 fuer Bugfix-Chats
 
-Stand: 2026-05-21  
+Stand: 2026-06-10 (v36)  
 Arbeitsordner: `/Users/admin/Downloads/Codex playground/projekwoche app neu`  
 Repo: `https://github.com/BenditoT/krs-projektwahl-2026.git`  
 Branch: `main`  
@@ -15,8 +15,26 @@ Dieses Dokument ist als Startpunkt fuer einen neuen Codex-Chat gedacht. Es soll 
 - Schueler-App: `https://benditot.github.io/krs-projektwahl-2026/schueler-frontend-v3.html`
 - Supabase-Projekt: `uzynvvtsyjfmtywsfxtz`
 - Supabase-URL: `https://uzynvvtsyjfmtywsfxtz.supabase.co`
-- Admin-Version in `admin-dashboard-v2.html`: `window.KRS_VERSION = 'v35';`
+- Admin-Version in `admin-dashboard-v2.html`: `window.KRS_VERSION = 'v36';`
 - Schueler-Version in `schueler-frontend-v3.html`: `window.KRS_VERSION = 'v34';`
+
+### v36 (2026-06-10): Kurzbeschreibung-Pflichtfeld + Kapazitaet freigegeben
+
+1. **Kurzbeschreibung-NOT-NULL-Bugfix** (vom 07.05., jetzt committet): Form-Validation
+   (Pflichtfeld + max. 300 Zeichen), Payload-Default `''` statt `null`, Static-Method
+   `KrsDataService.normalizeProjektPayload()` in HTML-Inline-Service UND `krs-supabase-service.js`.
+   Betroffene Tests wurden angepasst: alle Specs, die das Projekt-Modal speichern, fuellen
+   jetzt die Kurzbeschreibung (smoke-projekt-crud, feature-modal-validation,
+   flow-bulk-veroeffentlichen, flow-projektleitung-nadine). Neuer Test:
+   "fehlende Kurzbeschreibung → Fehler-Toast".
+2. **Kapazitaetsregel freigegeben**: Die harte 12/24-Regel (12 pro Lehrkraft) ist weg,
+   weil feste Klassenprojekte >24 Schueler haben. 12/24 ist nur noch Richtwert
+   (Default beim Hinzufuegen der 2. Lehrkraft). Neue Plausibilitaetsgrenze:
+   `PROJECT_CAPACITY_HARD_MAX = 100`. Neuer Test: "Klassenprojekt mit 30 Plaetzen".
+   **WICHTIG: Migration `migration-v36-kapazitaet-frei.sql` muss in Supabase laufen**
+   (ersetzt Constraint `projekte_max_plaetze_lehrer_check` durch Range-Check 1..100),
+   sonst lehnt die DB im Produktiv-Modus >24 Plaetze weiter ab:
+   `~/.local/bin/supabase db query --linked --file migration-v36-kapazitaet-frei.sql`
 
 Die App ist eine statische GitHub-Pages-App. Es gibt keinen Build-Schritt fuer die Produktivdateien. HTML, JS und CSS liegen direkt in den grossen Single-File-HTMLs.
 

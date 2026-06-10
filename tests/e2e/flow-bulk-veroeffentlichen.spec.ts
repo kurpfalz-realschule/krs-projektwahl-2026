@@ -34,6 +34,8 @@ test.describe('Flow: Bulk-Veröffentlichen', () => {
     await expect(page.locator('.modal-content')).toBeVisible();
 
     await page.locator('.modal-content input[type="text"]').first().fill(uniqueTitel);
+    // Kurzbeschreibung ist Pflichtfeld (NOT-NULL-Bugfix)
+    await page.locator('.modal-content textarea').first().fill('Bulk-Test Kurzbeschreibung');
     await page.waitForTimeout(200);
 
     // Lehrer wählen
@@ -80,6 +82,8 @@ test.describe('Flow: Bulk-Veröffentlichen', () => {
     await page.getByRole('button', { name: /Neues Projekt|➕/i }).first().click();
     await expect(page.locator('.modal-content')).toBeVisible();
     await page.locator('.modal-content input[type="text"]').first().fill(uniqueTitel);
+    // Kurzbeschreibung ist Pflichtfeld (NOT-NULL-Bugfix)
+    await page.locator('.modal-content textarea').first().fill('Bulk-Click Kurzbeschreibung');
     await page.waitForTimeout(200);
     const lehrerSelect = page.locator('.modal-content select').first();
     const opts = await lehrerSelect.locator('option').all();

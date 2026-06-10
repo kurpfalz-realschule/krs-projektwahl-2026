@@ -36,6 +36,8 @@ test.describe('Flow: Projektleitung Nadine', () => {
 
     // Titel ausfüllen + kurz warten damit Preact-State-Update propagiert
     await page.locator('.modal-content input[type="text"]').first().fill(uniqueTitel);
+    // Kurzbeschreibung ist Pflichtfeld (NOT-NULL-Bugfix)
+    await page.locator('.modal-content textarea').first().fill('Nadine-Flow Kurzbeschreibung');
     await page.waitForTimeout(200);
 
     // Lehrer-Dropdown: erste gültige Option wählen

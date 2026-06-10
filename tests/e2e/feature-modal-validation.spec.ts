@@ -56,8 +56,11 @@ test.describe('Feature: Modal-Validierung', () => {
     await page.getByRole('button', { name: /Neues Projekt|➕/i }).first().click();
     await expect(page.locator('.modal-content')).toBeVisible();
 
-    // Titel + Lehrer befüllen
+    // Titel + Kurzbeschreibung + Lehrer befüllen
+    // (Kurzbeschreibung ist seit dem NOT-NULL-Bugfix Pflichtfeld — ohne sie
+    //  würde deren Fehler-Toast zuerst feuern statt der Plätze-Validierung)
     await page.locator('.modal-content input[type="text"]').first().fill('Plätze-Test');
+    await page.locator('.modal-content textarea').first().fill('Kurzbeschreibung für Plätze-Test');
     await page.waitForTimeout(150);
     const lehrerSelect = page.locator('.modal-content select').first();
     const opts = await lehrerSelect.locator('option').all();
@@ -79,6 +82,31 @@ test.describe('Feature: Modal-Validierung', () => {
 
     await expect(
       page.locator('.toast.error').filter({ hasText: /Max\. Plätze müssen >= Min\. Teilnehmer/i })
+    ).toBeVisible({ timeout: 3_000 });
+    await expect(page.locator('.modal-content')).toBeVisible();
+  });
+
+  test('Projekt-Modal: fehlende Kurzbeschreibung → Fehler-Toast', async ({ appPage: page }) => {
+    await goToSection(page, 'projekte');
+
+    await page.getByRole('button', { name: /Neues Projekt|➕/i }).first().click();
+    await expect(page.locator('.modal-content')).toBeVisible();
+
+    // Titel + Lehrer befüllen, Kurzbeschreibung absichtlich leer lassen
+    await page.locator('.modal-content input[type="text"]').first().fill('Ohne-Kurzbeschreibung-Test');
+    await page.waitForTimeout(150);
+    const lehrerSelect = page.locator('.modal-content select').first();
+    const opts = await lehrerSelect.locator('option').all();
+    for (const o of opts) {
+      const v = await o.getAttribute('value');
+      if (v && v !== '') { await lehrerSelect.selectOption(v); break; }
+    }
+    await page.waitForTimeout(150);
+
+    await page.locator('.modal-content').getByRole('button', { name: /speichern/i }).click();
+
+    await expect(
+      page.locator('.toast.error').filter({ hasText: /Kurzbeschreibung ist erforderlich/i })
     ).toBeVisible({ timeout: 3_000 });
     await expect(page.locator('.modal-content')).toBeVisible();
   });

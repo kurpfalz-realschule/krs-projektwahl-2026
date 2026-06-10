@@ -400,16 +400,30 @@
       return data || [];
     }
 
+    // Bugfix: NOT-NULL-Spalten in projekte normalisieren, bevor sie an Supabase gehen.
+    // kurzbeschreibung darf in der DB nicht null sein — Caller schickten teilweise null
+    // bei leerer Eingabe (z.B. v3-Form). Static-Method ist die letzte Verteidigungslinie.
+    static normalizeProjektPayload(p) {
+      const out = { ...p };
+      if (out.kurzbeschreibung === null || out.kurzbeschreibung === undefined) {
+        out.kurzbeschreibung = '';
+      } else {
+        out.kurzbeschreibung = String(out.kurzbeschreibung).trim();
+      }
+      return out;
+    }
+
     async createProjekt(payload) {
+      const safe = KrsDataService.normalizeProjektPayload(payload);
       if (this.isDemo) {
         const id = (crypto.randomUUID && crypto.randomUUID()) || String(Date.now());
-        const neu = { id, ...payload, created_at: new Date().toISOString() };
+        const neu = { id, ...safe, created_at: new Date().toISOString() };
         (window.MOCK_PROJEKTE ||= []).push(neu);
         return neu;
       }
       const { data, error } = await this.client
         .from('projekte')
-        .insert(payload)
+        .insert(safe)
         .select('*')
         .single();
       if (error) throw new Error('createProjekt: ' + error.message);
@@ -417,15 +431,16 @@
     }
 
     async updateProjekt(id, patch) {
+      const safe = KrsDataService.normalizeProjektPayload(patch);
       if (this.isDemo) {
         const arr = window.MOCK_PROJEKTE || [];
         const p = arr.find(x => x.id === id);
-        if (p) Object.assign(p, patch);
+        if (p) Object.assign(p, safe);
         return p;
       }
       const { data, error } = await this.client
         .from('projekte')
-        .update(patch)
+        .update(safe)
         .eq('id', id)
         .select('*')
         .single();

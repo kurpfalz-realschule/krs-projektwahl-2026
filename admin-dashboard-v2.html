@@ -557,26 +557,40 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
       if (error) throw new Error('listProjekte: ' + error.message);
       return data || [];
     }
+    // Bugfix: NOT-NULL-Spalten in projekte normalisieren, bevor sie an Supabase gehen.
+    // kurzbeschreibung darf in der DB nicht null sein — Caller schickten teilweise null
+    // bei leerer Eingabe (z.B. v3-Form). Static-Method ist die letzte Verteidigungslinie.
+    static normalizeProjektPayload(p) {
+      const out = { ...p };
+      if (out.kurzbeschreibung === null || out.kurzbeschreibung === undefined) {
+        out.kurzbeschreibung = '';
+      } else {
+        out.kurzbeschreibung = String(out.kurzbeschreibung).trim();
+      }
+      return out;
+    }
     async createProjekt(payload) {
+      const safe = KrsDataService.normalizeProjektPayload(payload);
       if (this.isDemo) {
         const id = (crypto.randomUUID && crypto.randomUUID()) || String(Date.now());
-        const neu = { id, ...payload, created_at: new Date().toISOString() };
+        const neu = { id, ...safe, created_at: new Date().toISOString() };
         (window.MOCK_PROJEKTE ||= []).push(neu);
         return neu;
       }
-      const { data, error } = await this.client.from('projekte').insert(payload).select('*').single();
+      const { data, error } = await this.client.from('projekte').insert(safe).select('*').single();
       if (error) throw new Error('createProjekt: ' + error.message);
       return data;
     }
     async updateProjekt(id, patch) {
+      const safe = KrsDataService.normalizeProjektPayload(patch);
       if (this.isDemo) {
         const arr = window.MOCK_PROJEKTE || [];
         const p = arr.find(x => x.id === id);
-        if (p) Object.assign(p, patch);
+        if (p) Object.assign(p, safe);
         return p;
       }
       const { data, error } = await this.client
-        .from('projekte').update(patch).eq('id', id).select('*').single();
+        .from('projekte').update(safe).eq('id', id).select('*').single();
       if (error) throw new Error('updateProjekt: ' + error.message);
       return data;
     }
@@ -907,7 +921,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v35';
+  window.KRS_VERSION = 'v36';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -2196,6 +2210,10 @@ function joinLehrerNames(row) {
 }
 
 const PROJECT_CAPACITY_PER_TEACHER = 12;
+// v36: Kapazität freigegeben — 12/24 sind nur noch Richtwert (Default beim
+// Hinzufügen der 2. Lehrkraft). Hartes Limit nur noch als Plausibilitätsgrenze,
+// damit Klassenprojekte mit >24 Schülern möglich sind.
+const PROJECT_CAPACITY_HARD_MAX = 100;
 const PROJECT_GRADE_OPTIONS = [5, 6, 7, 8, 9, 10];
 
 function parseIntOr(value, fallback) {
@@ -2216,20 +2234,25 @@ function getProjektTeacherCount(projekt) {
   return Math.max(1, new Set(getProjektTeacherIds(projekt)).size);
 }
 
-function getProjektMaxPlaetzeLimit(projekt) {
+// v36: Richtwert (12 pro Lehrkraft) — nur noch Default/Hinweis, kein hartes Limit.
+function getProjektPlaetzeRichtwert(projekt) {
   return getProjektTeacherCount(projekt) * PROJECT_CAPACITY_PER_TEACHER;
+}
+
+function getProjektMaxPlaetzeLimit() {
+  return PROJECT_CAPACITY_HARD_MAX;
 }
 
 function normalizeProjektCapacity(projekt, { expandForSecondTeacher = false } = {}) {
   const next = { ...projekt };
   if (next.lehrer2_id && next.lehrer2_id === next.lehrer_id) next.lehrer2_id = '';
   const teacherCount = getProjektTeacherCount(next);
-  const limit = getProjektMaxPlaetzeLimit(next);
   let maxPlaetze = parseIntOr(next.max_plaetze, PROJECT_CAPACITY_PER_TEACHER);
   if (expandForSecondTeacher && teacherCount === 2 && maxPlaetze === PROJECT_CAPACITY_PER_TEACHER) {
     maxPlaetze = PROJECT_CAPACITY_PER_TEACHER * 2;
   }
-  next.max_plaetze = clampInt(maxPlaetze, 1, limit);
+  // v36: kein Klemmen mehr auf 12/24 — nur noch Plausibilitätsgrenze.
+  next.max_plaetze = clampInt(maxPlaetze, 1, PROJECT_CAPACITY_HARD_MAX);
   next.min_teilnehmer = clampInt(next.min_teilnehmer, 1, next.max_plaetze);
   return next;
 }
@@ -3262,6 +3285,7 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
     const lehrerChoices = mockLehrerData.filter(l => l.rolle === 'projektlehrer' || l.rolle === 'super_admin');
     const teacherCount = getProjektTeacherCount(formData);
     const maxPlaetzeLimit = getProjektMaxPlaetzeLimit(formData);
+    const plaetzeRichtwert = getProjektPlaetzeRichtwert(formData);
     const currentMaxPlaetze = parseIntOr(formData.max_plaetze, PROJECT_CAPACITY_PER_TEACHER);
     setModal(html`
       <div class="modal-overlay" onClick=${closeModal}>
@@ -3273,8 +3297,8 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
             <input type="text" value=${formData?.titel || ''} onInput=${e => setFormData({...formData, titel: e.target.value})} />
           </div>
           <div class="input-group">
-            <label>Kurzbeschreibung</label>
-            <textarea value=${formData?.kurzbeschreibung || ''} onInput=${e => setFormData({...formData, kurzbeschreibung: e.target.value})}></textarea>
+            <label>Kurzbeschreibung *</label>
+            <textarea maxlength="300" value=${formData?.kurzbeschreibung || ''} onInput=${e => setFormData({...formData, kurzbeschreibung: e.target.value})}></textarea>
           </div>
           <div class="form-row">
             <div class="input-group">
@@ -3325,7 +3349,7 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
               min: 1,
               max: maxPlaetzeLimit,
               testId: 'projekt-max-plaetze-control',
-              hint: `${teacherCount} ${teacherCount === 1 ? 'Lehrer' : 'Lehrer'} x ${PROJECT_CAPACITY_PER_TEACHER} Plätze = max. ${maxPlaetzeLimit}`,
+              hint: `Richtwert: ${teacherCount} x ${PROJECT_CAPACITY_PER_TEACHER} = ${plaetzeRichtwert} Plätze — frei wählbar bis ${PROJECT_CAPACITY_HARD_MAX}`,
               onChange: value => {
                 setFormData(prev => {
                   const next = { ...(prev || formData), max_plaetze: value };
@@ -3346,7 +3370,7 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
             <div class="input-group">
               <label>Kapazitätsregel</label>
               <div style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-subtle);font-size:13px;color:var(--text-muted);min-height:40px;">
-                12 Plätze pro Lehrkraft. Mit zwei Lehrkräften sind bis zu 24 Plätze möglich.
+                Richtwert: 12 Plätze pro Lehrkraft (24 mit zwei Lehrkräften). Die Plätze sind frei wählbar, z.&nbsp;B. für feste Klassenprojekte mit mehr Schülern.
               </div>
             </div>
           </div>
@@ -3454,9 +3478,18 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
               if (cleanedForm.lehrer2_id && cleanedForm.lehrer2_id === cleanedForm.lehrer_id) cleanedForm.lehrer2_id = '';
               const minTeilnehmer = parseIntOr(cleanedForm.min_teilnehmer, 0);
               const maxPlaetze = parseIntOr(cleanedForm.max_plaetze, 0);
-              const maxAllowed = getProjektMaxPlaetzeLimit(cleanedForm);
               if (!cleanedForm.titel || !cleanedForm.lehrer_id) {
                 showToast('Titel und Lehrer sind erforderlich', 'error');
+                return;
+              }
+              // Bugfix: kurzbeschreibung ist NOT NULL in der DB — leerer Wert würde
+              // sonst den Insert/Update mit "violates not-null constraint" scheitern lassen.
+              if (!(cleanedForm.kurzbeschreibung || '').trim()) {
+                showToast('Kurzbeschreibung ist erforderlich', 'error');
+                return;
+              }
+              if ((cleanedForm.kurzbeschreibung || '').length > 300) {
+                showToast('Kurzbeschreibung darf max. 300 Zeichen haben', 'error');
                 return;
               }
               if (cleanedForm.lehrer2_id && cleanedForm.lehrer2_id === cleanedForm.lehrer_id) {
@@ -3467,8 +3500,9 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
                 showToast('Max. Plätze müssen >= Min. Teilnehmer sein', 'error');
                 return;
               }
-              if (maxPlaetze > maxAllowed) {
-                showToast('Zu viele Plätze: max. ' + maxAllowed + ' bei ' + getProjektTeacherCount(cleanedForm) + ' Lehrkraft/Lehrkräften.', 'error');
+              // v36: 12/24 ist nur noch Richtwert — hartes Limit nur Plausibilitätsgrenze.
+              if (maxPlaetze > PROJECT_CAPACITY_HARD_MAX) {
+                showToast('Zu viele Plätze: max. ' + PROJECT_CAPACITY_HARD_MAX + '.', 'error');
                 return;
               }
               try {
@@ -3480,7 +3514,10 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
                     lehrer_id: cleanedForm.lehrer_id,
                     lehrer2_id: cleanedForm.lehrer2_id || null,
                     ort: cleanedForm.ort || null,
-                    kurzbeschreibung: cleanedForm.kurzbeschreibung || null,
+                    // Bugfix: leerer String statt null — DB-Spalte ist NOT NULL.
+                    // Form-Validation oben fängt leere Werte bereits ab; das hier ist
+                    // ein defensives Safety-Net falls Validation umgangen würde.
+                    kurzbeschreibung: (cleanedForm.kurzbeschreibung || '').trim(),
                     min_teilnehmer: minTeilnehmer,
                     max_plaetze: maxPlaetze,
                     min_klasse: cleanedForm.min_klasse ?? 5,

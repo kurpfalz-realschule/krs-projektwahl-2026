@@ -25,6 +25,8 @@ test.describe('Smoke: Projekt-CRUD', () => {
 
     // Titel-Feld (erstes text-Input im Modal) + kurz warten damit Preact propagiert
     await page.locator('.modal-content input[type="text"]').first().fill(uniqueTitel);
+    // Kurzbeschreibung ist Pflichtfeld (NOT-NULL-Bugfix)
+    await page.locator('.modal-content textarea').first().fill('Smoke-Test Kurzbeschreibung');
     await page.waitForTimeout(200);
 
     // Lehrer-Dropdown: erste gültige Option wählen
@@ -55,6 +57,8 @@ test.describe('Smoke: Projekt-CRUD', () => {
     await expect(page.locator('.modal-content')).toBeVisible();
 
     await page.locator('.modal-content input[type="text"]').first().fill(uniqueTitel);
+    // Kurzbeschreibung ist Pflichtfeld (NOT-NULL-Bugfix)
+    await page.locator('.modal-content textarea').first().fill('Zwei-Lehrer Kurzbeschreibung');
 
     const lehrer1 = page.locator('[data-testid="projekt-lehrer1-select"]');
     const lehrer2 = page.locator('[data-testid="projekt-lehrer2-select"]');
@@ -90,6 +94,36 @@ test.describe('Smoke: Projekt-CRUD', () => {
     await expect(page.locator('.modal-content')).toBeHidden({ timeout: 5_000 });
     await expect(page.locator('table tbody').getByText(uniqueTitel).first()).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('table tbody tr').filter({ hasText: uniqueTitel })).toContainText('/24');
+  });
+
+  test('v36: Klassenprojekt mit 30 Plätzen (mehr als alter 24er-Deckel)', async ({ appPage: page }) => {
+    await goToSection(page, 'projekte');
+
+    const uniqueTitel = 'Klassenprojekt-30-' + Date.now();
+    await page.getByRole('button', { name: /Neues Projekt|Projekt anlegen|➕/i }).first().click();
+    await expect(page.locator('.modal-content')).toBeVisible();
+
+    await page.locator('.modal-content input[type="text"]').first().fill(uniqueTitel);
+    await page.locator('.modal-content textarea').first().fill('Festes Klassenprojekt mit ganzer Klasse');
+    await page.waitForTimeout(150);
+
+    // Nur EIN Lehrer — früher wären hier max. 12 Plätze erlaubt gewesen
+    const lehrer1 = page.locator('[data-testid="projekt-lehrer1-select"]');
+    const firstTeacher = await lehrer1.locator('option:not([value=""])').first().getAttribute('value');
+    expect(firstTeacher).toBeTruthy();
+    await lehrer1.selectOption(firstTeacher!);
+    await page.waitForTimeout(150);
+
+    // 30 Plätze eintragen — darf nicht mehr geklemmt werden
+    const maxInput = page.locator('[data-testid="projekt-max-plaetze-control"] input[type="number"]');
+    await maxInput.fill('30');
+    await expect(maxInput).toHaveValue('30');
+    await page.waitForTimeout(150);
+
+    await page.locator('.modal-content').getByRole('button', { name: /speichern/i }).click();
+    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 5_000 });
+    await expect(page.locator('table tbody').getByText(uniqueTitel).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('table tbody tr').filter({ hasText: uniqueTitel })).toContainText('/30');
   });
 
   test('Projekt bearbeiten → Modal prefilled, Änderung persistiert', async ({ appPage: page }) => {
