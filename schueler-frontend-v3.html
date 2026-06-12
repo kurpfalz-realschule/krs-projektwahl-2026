@@ -341,17 +341,39 @@ footer a:hover{text-decoration:underline}
       return String(v || 'anmeldung').replace(/^"|"$/g, '');
     }
     async getSystemSetting(key) {
-      if (this.isDemo) return null;
+      if (this.isDemo) return (window.MOCK_SETTINGS || {})[key] ?? null;
       const { data, error } = await this.client
         .from('system_settings').select('value').eq('key', key).maybeSingle();
       if (error) throw new Error('getSystemSetting(' + key + '): ' + error.message);
       return data ? data.value : null;
     }
+    // v37: Alle Termin-Keys in EINEM Query laden. Fehlende Keys → null.
+    async getTermine() {
+      const KEYS = ['anmelde_deadline', 'tausch_deadline', 'projekttage_beginn', 'projekttage_ende'];
+      if (this.isDemo) {
+        const s = window.MOCK_SETTINGS || {};
+        return Object.fromEntries(KEYS.map(k => [k, s[k] ?? null]));
+      }
+      const { data, error } = await this.client
+        .from('system_settings').select('key,value').in('key', KEYS);
+      if (error) throw new Error('getTermine: ' + error.message);
+      const out = Object.fromEntries(KEYS.map(k => [k, null]));
+      for (const row of (data || [])) {
+        let v = row.value;
+        if (typeof v === 'string' && v.length >= 2 && v.startsWith('"') && v.endsWith('"')) {
+          try { v = JSON.parse(v); } catch { v = v.slice(1, -1); }
+        }
+        out[row.key] = v;
+      }
+      return out;
+    }
     async setPhase(newPhase) {
       if (this.isDemo) { window.MOCK_PHASE = newPhase; return { success: true }; }
+      // v37: JSONB-Column → Supabase-Client serialisiert selbst. JSON.stringify()
+      // führte zu Doppel-Encoding ("\"anmeldung\"") — im Admin bereits gefixt (v3x).
       const { error } = await this.client
         .from('system_settings')
-        .upsert({ key: 'phase', value: JSON.stringify(newPhase) }, { onConflict: 'key' });
+        .upsert({ key: 'phase', value: newPhase }, { onConflict: 'key' });
       if (error) throw new Error('setPhase: ' + error.message);
       return { success: true };
     }
@@ -688,7 +710,7 @@ footer a:hover{text-decoration:underline}
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v34';
+  window.KRS_VERSION = 'v38';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '— Version:', window.KRS_VERSION);
 })();
 </script>
@@ -776,6 +798,25 @@ const MOCK_SCHUELER = {
 // Demo-Mocks auf window legen, damit der DataService sie im Demo-Modus findet
 window.MOCK_PROJEKTE = MOCK_PROJEKTE;
 window.MOCK_SCHUELER = MOCK_SCHUELER;
+// v37: Demo-Termine — Playwright kann via window.MOCK_SETTINGS (addInitScript) seeden
+window.MOCK_SETTINGS = window.MOCK_SETTINGS || {
+  anmelde_deadline: '2026-07-10T23:59',
+  tausch_deadline: '2026-07-17T23:59',
+  projekttage_beginn: '2026-07-21',
+  projekttage_ende: '2026-07-23'
+};
+
+// v37: Termin hübsch formatieren — "2026-07-10T23:59" → "10.07.2026, 23:59 Uhr"
+function fmtTermin(v) {
+  if (!v) return '';
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return v;
+  const datum = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  if (String(v).includes('T')) {
+    return datum + ', ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr';
+  }
+  return datum;
+}
 
 // === APP ===
 function App() {
@@ -795,6 +836,20 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [termine, setTermine] = useState(null); // v37: Termine aus system_settings
+
+  // v37: Termine laden (Demo: window.MOCK_SETTINGS / Produktiv: system_settings).
+  // Nicht-kritisch — bei Fehler bleibt der TENANT-Fallback im Header aktiv.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const t = await service.getTermine();
+        if (!cancelled) setTermine(t);
+      } catch (e) { console.warn('[KRS] getTermine:', e); }
+    })();
+    return () => { cancelled = true; };
+  }, [service]);
 
   // Phase in Produktivmodus aus system_settings laden (+ Realtime, falls später auf Wahlen reagiert werden soll)
   useEffect(() => {
@@ -883,7 +938,10 @@ function App() {
       // Phasen-Routing — Phase aus RPC bevorzugen (Produktiv); sonst lokale Phase
       const effectivePhase = res.phase || phase;
       if (effectivePhase === 'anmeldung') {
-        if (s.status.hat_gewaehlt) setView('bereits-angemeldet');
+        // v38: Vorab zugeordnete Schüler (z.B. Klassenprojekt) sehen direkt
+        // ihr Projekt und müssen/können nicht mehr wählen.
+        if (s.status.zuteilung) setView('mein-ergebnis');
+        else if (s.status.hat_gewaehlt) setView('bereits-angemeldet');
         else setView('bestaetigung');
       } else if (effectivePhase === 'verteilung') {
         setView('verteilung-laeuft');
@@ -1000,8 +1058,20 @@ function App() {
         <div>
           <div class="event-title">Projekttage ${(window.TENANT && window.TENANT.termine && window.TENANT.termine.projektwoche_jahr) || ''}</div>
           <div class="event-subtitle">
-            <span class="event-accent">${(window.TENANT_HELPERS && window.TENANT_HELPERS.terminBereich && window.TENANT_HELPERS.terminBereich()) || ''}</span>${window.TENANT && window.TENANT.termine && window.TENANT.termine.schulfest ? html` · Schulfest ${window.TENANT_HELPERS.terminTag(window.TENANT.termine.schulfest)}` : ''}
+            <span class="event-accent">${(termine && termine.projekttage_beginn && termine.projekttage_ende)
+              ? (fmtTermin(termine.projekttage_beginn) + ' – ' + fmtTermin(termine.projekttage_ende))
+              : ((window.TENANT_HELPERS && window.TENANT_HELPERS.terminBereich && window.TENANT_HELPERS.terminBereich()) || '')}</span>${window.TENANT && window.TENANT.termine && window.TENANT.termine.schulfest ? html` · Schulfest ${window.TENANT_HELPERS.terminTag(window.TENANT.termine.schulfest)}` : ''}
           </div>
+          ${phase === 'anmeldung' && termine && termine.anmelde_deadline && html`
+            <div data-testid="deadline-hinweis" style="font-size:13px;margin-top:4px;opacity:0.9">
+              ✍️ Anmeldung bis ${fmtTermin(termine.anmelde_deadline)}
+            </div>
+          `}
+          ${phase === 'nachbearbeitung' && termine && termine.tausch_deadline && html`
+            <div data-testid="deadline-hinweis" style="font-size:13px;margin-top:4px;opacity:0.9">
+              🔄 Tauschwünsche bis ${fmtTermin(termine.tausch_deadline)}
+            </div>
+          `}
         </div>
       </div>
     </header>
@@ -1291,7 +1361,7 @@ function MeinErgebnis({ schueler, projekte, onTausch, onClose, phase }) {
     1: { text: '1. Wahl 🎯', color: 'wahl-1', message: 'Das war deine Erstwahl — super!' },
     2: { text: '2. Wahl', color: 'wahl-2', message: 'Das war deine Zweitwahl.' },
     3: { text: '3. Wahl', color: 'wahl-3', message: 'Das war deine Drittwahl.' }
-  }[wahlNr] || { text: 'Zuteilung', color: 'wahl-none', message: 'Wurde manuell zugeteilt.' };
+  }[wahlNr] || { text: 'Zuteilung', color: 'wahl-none', message: 'Du wurdest diesem Projekt direkt zugeteilt.' };
 
   // v30/E2: Defensiv falls Zuteilung auf depubliziertes/gelöschtes Projekt zeigt.
   if (!projekt) {
@@ -1324,8 +1394,8 @@ function MeinErgebnis({ schueler, projekte, onTausch, onClose, phase }) {
         </div>
       ` : html`
         <div class="alert alert-info">
-          <strong>${wahlLabel.message}</strong><br/>
-          Wenn du lieber in einem anderen Projekt wärst, kannst du einen Tauschwunsch stellen.
+          <strong>${wahlLabel.message}</strong>
+          ${phase !== 'anmeldung' && html`<br/>Wenn du lieber in einem anderen Projekt wärst, kannst du einen Tauschwunsch stellen.`}
         </div>
       `}
       
@@ -1338,7 +1408,7 @@ function MeinErgebnis({ schueler, projekte, onTausch, onClose, phase }) {
         </div>
       ` : html`
         <div class="actions">
-          ${wahlNr !== 1 && html`<button class="btn btn-accent" onClick=${onTausch}>🔄 Tauschwunsch stellen</button>`}
+          ${wahlNr !== 1 && phase !== 'anmeldung' && html`<button class="btn btn-accent" onClick=${onTausch}>🔄 Tauschwunsch stellen</button>`}
           <button class="btn btn-ghost" onClick=${onClose}>Zur Startseite</button>
         </div>
       `}

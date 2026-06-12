@@ -220,6 +220,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
   // Für Playwright-E2E-Tests gegen Produktiv-Build ohne DB-Mutation.
   const _qs = new URLSearchParams((typeof location !== 'undefined' ? location.search : ''));
   const FORCE_DEMO = _qs.get('forceMode') === 'demo' || window.__KRS_FORCE_DEMO === true;
+
+  // v37: Termin-Keys in system_settings (Anzeige-Werte — Phase bleibt manueller Master-Schalter)
+  window.TERMIN_KEYS = ['anmelde_deadline', 'tausch_deadline', 'projekttage_beginn', 'projekttage_ende'];
   const HAS_SUPABASE =
     !FORCE_DEMO &&
     !!CFG.url &&
@@ -428,11 +431,33 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
       return String(v || 'anmeldung');
     }
     async getSystemSetting(key) {
-      if (this.isDemo) return null;
+      if (this.isDemo) return (window.MOCK_SETTINGS || {})[key] ?? null;
       const { data, error } = await this.client
         .from('system_settings').select('value').eq('key', key).maybeSingle();
       if (error) throw new Error('getSystemSetting(' + key + '): ' + error.message);
       return data ? data.value : null;
+    }
+    // v37: Alle Termin-Keys in EINEM Query laden (statt 4 Roundtrips).
+    // Liefert { anmelde_deadline, tausch_deadline, projekttage_beginn, projekttage_ende }
+    // — fehlende Keys als null. Defensive Doppel-Encoding-Behandlung wie getPhase().
+    async getTermine() {
+      const KEYS = window.TERMIN_KEYS;
+      if (this.isDemo) {
+        const s = window.MOCK_SETTINGS || {};
+        return Object.fromEntries(KEYS.map(k => [k, s[k] ?? null]));
+      }
+      const { data, error } = await this.client
+        .from('system_settings').select('key,value').in('key', KEYS);
+      if (error) throw new Error('getTermine: ' + error.message);
+      const out = Object.fromEntries(KEYS.map(k => [k, null]));
+      for (const row of (data || [])) {
+        let v = row.value;
+        if (typeof v === 'string' && v.length >= 2 && v.startsWith('"') && v.endsWith('"')) {
+          try { v = JSON.parse(v); } catch { v = v.slice(1, -1); }
+        }
+        out[row.key] = v;
+      }
+      return out;
     }
     async setPhase(newPhase) {
       if (this.isDemo) { window.MOCK_PHASE = newPhase; return { success: true }; }
@@ -445,7 +470,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
       return { success: true };
     }
     async setSystemSetting(key, value) {
-      if (this.isDemo) return { success: true };
+      if (this.isDemo) { (window.MOCK_SETTINGS ||= {})[key] = value; return { success: true }; }
       const { error } = await this.client
         .from('system_settings')
         .upsert({ key, value }, { onConflict: 'key' });
@@ -829,8 +854,12 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
         const projekte = (window.MOCK_PROJEKTE || []).map(normalizeMockProjekt);
         const schueler = (typeof window.generateTestSchueler === 'function')
           ? window.generateTestSchueler(projekte) : [];
+        // v38: fixierte Vorab-Zuordnungen aus dem Schüler-Tab respektieren
+        const fixierte = ((typeof window !== 'undefined' && window.mockSchueler) || [])
+          .filter(s => s.fixiert && s.zuteilung)
+          .map(s => ({ schueler_code: s.code, projekt_id: s.zuteilung }));
         try {
-          const result = algo.verteile({ schueler, projekte, seed: seed || undefined });
+          const result = algo.verteile({ schueler, projekte, seed: seed || undefined, fixierte });
           return { success: true, committed: !!commit, ...result };
         } catch (e) {
           return { success: false, error: String(e && e.message || e) };
@@ -870,6 +899,58 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
         : { p_schueler_code: cleanCode };
       const { data, error } = await this.client.rpc(rpc, params);
       if (error) throw new Error('klassenlehrerAssignSchueler: ' + error.message);
+      return data || { success: false, error: 'keine_antwort' };
+    }
+    // v38: Bulk-Zuordnung (Vorab-Zuordnung ganzer Klassen/Gruppen).
+    // projektId gesetzt → alle Codes fixiert zuordnen; projektId null → Zuordnung aufheben.
+    // Demo: mutiert window.mockSchueler (zuteilung + fixiert) und dispatcht 'krs:mock-seeded'.
+    // Live: RPC admin_bulk_assign (Migration v38), prüft Admin-Rolle serverseitig.
+    async bulkAssign({ codes, projektId = null, bearbeiterId, kommentar = null }) {
+      const cleanCodes = Array.from(new Set((codes || [])
+        .map(c => String(c || '').toUpperCase().trim())
+        .filter(Boolean)));
+      if (cleanCodes.length === 0) return { success: false, error: 'keine_codes' };
+      if (this.isDemo) {
+        const list = (typeof window !== 'undefined' && window.mockSchueler) || [];
+        const projekt = projektId
+          ? ((window.MOCK_PROJEKTE || []).map(normalizeMockProjekt).find(p => p.id === projektId) || null)
+          : null;
+        if (projektId && !projekt) return { success: false, error: 'projekt_unbekannt' };
+        let zugeordnet = 0, aufgehoben = 0;
+        const unbekannt = [], stufenHinweise = [];
+        cleanCodes.forEach(code => {
+          const s = list.find(x => String(x.code || '').toUpperCase() === code);
+          if (!s) { unbekannt.push(code); return; }
+          if (projektId) {
+            if (projekt && (s.klassenstufe < projekt.min_klasse || s.klassenstufe > projekt.max_klasse)) {
+              stufenHinweise.push({ code, klassenstufe: s.klassenstufe, projekt_min: projekt.min_klasse, projekt_max: projekt.max_klasse });
+            }
+            s.zuteilung = projektId;
+            s.fixiert = true;
+            zugeordnet++;
+          } else {
+            s.zuteilung = null;
+            s.fixiert = false;
+            aufgehoben++;
+          }
+        });
+        const belegung = projektId ? list.filter(x => x.zuteilung === projektId).length : 0;
+        try { window.dispatchEvent(new Event('krs:mock-seeded')); } catch (_) {}
+        return projektId
+          ? { success: true, modus: 'zuordnen', projekt_id: projektId,
+              projekt_titel: projekt ? projekt.titel : '', projekt_status: projekt ? projekt.status : '',
+              zugeordnet, unbekannte_codes: unbekannt, klassenstufen_hinweise: stufenHinweise,
+              neue_belegung: belegung, max_plaetze: projekt ? projekt.max_plaetze : 0,
+              ueberbucht: projekt ? belegung > projekt.max_plaetze : false,
+              hinweis_entwurf: projekt ? projekt.status === 'entwurf' : false }
+          : { success: true, modus: 'aufheben', aufgehoben, codes_uebergeben: cleanCodes.length };
+      }
+      const bid = await this._resolveBearbeiterId(bearbeiterId);
+      const { data, error } = await this.client.rpc('admin_bulk_assign', {
+        p_schueler_codes: cleanCodes, p_projekt_id: projektId,
+        p_bearbeiter_id: bid, p_kommentar: kommentar,
+      });
+      if (error) throw new Error('bulkAssign: ' + error.message);
       return data || { success: false, error: 'keine_antwort' };
     }
     async updateZuteilung({ code, projektId, bearbeiterId, kommentar = null }) {
@@ -921,7 +1002,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v36';
+  window.KRS_VERSION = 'v38';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -1417,13 +1498,19 @@ class VerteilungsAlgorithmus {
    * @param {String} input.seed - optional, für Reproduzierbarkeit
    * @returns {Object} { zuteilungen, nicht_zugeteilt, statistik, seed, belegung }
    */
-  verteile({ schueler, projekte, seed }) {
+  verteile({ schueler, projekte, seed, fixierte = [] }) {
     const verwendeterSeed = seed || this._generateSeed();
     const prng = this._createPRNG(verwendeterSeed);
 
-    // Nur Schüler mit Wahlen verteilen
-    const mitWahlen = schueler.filter(s => s.wahlen?.erstwahl_id);
-    const ohneWahlen = schueler.filter(s => !s.wahlen?.erstwahl_id);
+    // v38: Fixierte Vorab-Zuordnungen (z.B. Klassenprojekte 7a+7d) —
+    // diese Schüler nehmen nicht an der Verlosung teil, ihre Plätze
+    // werden aber in der Belegung angerechnet.
+    const fixierteCodes = new Set(fixierte.map(f => String(f.schueler_code || '').toUpperCase()));
+    const istFixiert = (s) => fixierteCodes.has(String(s.code || '').toUpperCase());
+
+    // Nur Schüler mit Wahlen verteilen (fixierte ausgenommen)
+    const mitWahlen = schueler.filter(s => s.wahlen?.erstwahl_id && !istFixiert(s));
+    const ohneWahlen = schueler.filter(s => !s.wahlen?.erstwahl_id && !istFixiert(s));
 
     // Zufallsreihenfolge mit Seed
     const reihenfolge = this._shuffle(mitWahlen, prng);
@@ -1432,12 +1519,24 @@ class VerteilungsAlgorithmus {
     const projekteMap = {};
     projekte.forEach(p => { projekteMap[p.id] = p; });
 
-    // Belegung tracken
+    // Belegung tracken — v38: mit fixierten Zuteilungen vorbelegen
     const belegung = {};
     projekte.forEach(p => { belegung[p.id] = 0; });
+    fixierte.forEach(f => {
+      if (belegung[f.projekt_id] !== undefined) belegung[f.projekt_id]++;
+    });
 
-    // Ergebnisse
-    const zuteilungen = [];
+    // Ergebnisse — fixierte erscheinen mit wahl_nr null im Ergebnis,
+    // damit die Vorschau sie mit anzeigt
+    const zuteilungen = fixierte
+      .filter(f => projekteMap[f.projekt_id])
+      .map(f => ({
+        schueler_code: f.schueler_code,
+        projekt_id: f.projekt_id,
+        projekt_titel: projekteMap[f.projekt_id].titel,
+        wahl_nr: null,
+        fixiert: true
+      }));
     const nichtZugeteilt = [];
 
     // RSD-Hauptschleife
@@ -1503,9 +1602,11 @@ class VerteilungsAlgorithmus {
     const erstwahl = zuteilungen.filter(z => z.wahl_nr === 1).length;
     const zweitwahl = zuteilungen.filter(z => z.wahl_nr === 2).length;
     const drittwahl = zuteilungen.filter(z => z.wahl_nr === 3).length;
+    const anzahlFixiert = zuteilungen.filter(z => z.fixiert).length;
 
     const statistik = {
       gesamt_schueler,
+      fixiert: anzahlFixiert,
       erstwahl, prozent_erstwahl: Math.round((erstwahl / gesamt_schueler) * 100),
       zweitwahl, prozent_zweitwahl: Math.round((zweitwahl / gesamt_schueler) * 100),
       drittwahl, prozent_drittwahl: Math.round((drittwahl / gesamt_schueler) * 100),
@@ -2090,6 +2191,13 @@ if (typeof window !== 'undefined') {
   window.mockProjekteData = mockProjekteData;
   window.mockTauschData = mockTauschData;
   window.mockUmbuchungen = mockUmbuchungen;
+  // v37: Demo-Termine — Playwright kann diese via window.MOCK_SETTINGS seeden/prüfen
+  window.MOCK_SETTINGS = window.MOCK_SETTINGS || {
+    anmelde_deadline: '2026-07-10T23:59',
+    tausch_deadline: '2026-07-17T23:59',
+    projekttage_beginn: '2026-07-21',
+    projekttage_ende: '2026-07-23'
+  };
 }
 
 // === Helper: Ersetze Inhalt eines Arrays, ohne Reference zu ändern ===
@@ -2348,7 +2456,8 @@ function App() {
         klasse: s.klasse,
         klassenstufe: s.klassenstufe,
         hat_gewaehlt: !!s.hat_gewaehlt,
-        zuteilung: s.zuteilung || null
+        zuteilung: s.zuteilung || null,
+        fixiert: !!s.fixiert
       })));
       replaceArray(mockProjekteData, (projekte || []).map(p => ({
         id: p.id,
@@ -2599,8 +2708,10 @@ function App() {
         <div style="position:absolute;top:16px;right:20px;z-index:50;">
           <${PhaseBadge} phase=${phase} navigate=${navigate} />
         </div>
+        <!-- v37 (Stretch): Hinweis wenn Deadline überschritten, Phase aber noch nicht umgeschaltet -->
+        <${DeadlineBanner} phase=${phase} />
         ${activeSection === 'dashboard' && html`<${Dashboard} phase=${phase} navigate=${navigate} refreshKey=${refreshKey} />`}
-        ${activeSection === 'schueler' && html`<${SchuelerView} refreshKey=${refreshKey} />`}
+        ${activeSection === 'schueler' && html`<${SchuelerView} refreshKey=${refreshKey} reload=${loadAll} />`}
         ${activeSection === 'projekte' && html`<${ProjekteView} setModal=${setModal} refreshKey=${refreshKey} loadAll=${loadAll} />`}
         ${activeSection === 'lehrer' && html`<${LehrerView} setModal=${setModal} refreshKey=${refreshKey} loadAll=${loadAll} />`}
         ${activeSection === 'mein-projekt' && html`<${ProjektLehrerView} setModal=${setModal} refreshKey=${refreshKey} loadAll=${loadAll} phase=${phase} currentDbUserId=${currentDbUserId} />`}
@@ -2812,15 +2923,22 @@ function Dashboard({ phase, navigate, refreshKey }) {
 }
 
 // === SCHÜLER ===
-function SchuelerView({ refreshKey }) {
+function SchuelerView({ refreshKey, reload }) {
+  const service = useMemo(() => new window.KrsDataService(), []);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('alle');
-  const [filterKlasse, setFilterKlasse] = useState('alle');
+  // v38: Mehrfach-Klassenfilter — leeres Set = alle Klassen (z.B. 7a UND 7d gleichzeitig wählbar)
+  const [filterKlassen, setFilterKlassen] = useState(() => new Set());
   const [selectedCodes, setSelectedCodes] = useState(() => new Set());
   const [csvFile, setCsvFile] = useState(null);
   const [csvPreview, setCsvPreview] = useState(null);
   const [importing, setImporting] = useState(false);
   const [showCsvInfo, setShowCsvInfo] = useState(false); // Task #7
+  // v38: Bulk-Zuordnung
+  const [localKey, setLocalKey] = useState(0);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignProjektId, setAssignProjektId] = useState('');
+  const [assignBusy, setAssignBusy] = useState(false);
 
   // Liste aller vorkommenden Klassen, alphabetisch sortiert (z.B. 5a, 5b, 6a …).
   // Wird als Klassenfilter-Dropdown angezeigt.
@@ -2828,7 +2946,26 @@ function SchuelerView({ refreshKey }) {
     const set = new Set();
     mockSchueler.forEach(s => { if (s.klasse) set.add(String(s.klasse).toLowerCase()); });
     return Array.from(set).sort();
-  }, [refreshKey, mockSchueler.length]);
+  }, [refreshKey, localKey, mockSchueler.length]);
+
+  const klasseAktiv = filterKlassen.size > 0;
+  // Dropdown bei Klick außerhalb schließen (native <details> macht das nicht selbst)
+  useEffect(() => {
+    const close = (e) => {
+      const det = document.querySelector('.klassen-filter');
+      if (det && det.open && !det.contains(e.target)) det.open = false;
+    };
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, []);
+  const toggleKlasse = (k) => {
+    setFilterKlassen(prev => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k); else next.add(k);
+      return next;
+    });
+  };
+  const resetKlassen = () => setFilterKlassen(new Set());
 
   const gefiltert = mockSchueler.filter(s => {
     const q = search.toLowerCase();
@@ -2836,7 +2973,7 @@ function SchuelerView({ refreshKey }) {
     const matchFilter = filter === 'alle'
       || (filter === 'angemeldet' && s.hat_gewaehlt)
       || (filter === 'fehlt' && !s.hat_gewaehlt);
-    const matchKlasse = filterKlasse === 'alle' || (s.klasse && String(s.klasse).toLowerCase() === filterKlasse);
+    const matchKlasse = !klasseAktiv || (s.klasse && filterKlassen.has(String(s.klasse).toLowerCase()));
     return matchSearch && matchFilter && matchKlasse;
   });
 
@@ -2861,6 +2998,101 @@ function SchuelerView({ refreshKey }) {
   const clearSelection = () => setSelectedCodes(new Set());
   const allVisibleSelected = gefiltert.length > 0 && gefiltert.every(s => selectedCodes.has(s.code));
   const someVisibleSelected = gefiltert.some(s => selectedCodes.has(s.code)) && !allVisibleSelected;
+
+  // ---- v38: Bulk-Zuordnung (Vorab-Zuordnung) ----------------------------
+  // Nach Mutation: Demo re-rendert via localKey, Produktiv lädt via reload() neu.
+  const afterMutation = () => {
+    setLocalKey(k => k + 1);
+    if (window.KRS_MODE === 'produktiv' && typeof reload === 'function') reload();
+  };
+
+  const doBulkAssign = async () => {
+    if (!assignProjektId || selectedCodes.size === 0 || assignBusy) return;
+    setAssignBusy(true);
+    try {
+      const r = await service.bulkAssign({ codes: Array.from(selectedCodes), projektId: assignProjektId });
+      if (!r || r.success === false) {
+        showToast('Zuordnung fehlgeschlagen: ' + ((r && r.error) || 'unbekannt'), 'error');
+        return;
+      }
+      let msg = `📌 ${r.zugeordnet} Schüler → „${r.projekt_titel}" zugeordnet (${r.neue_belegung}/${r.max_plaetze} Plätze)`;
+      const hinweise = [];
+      if ((r.unbekannte_codes || []).length) hinweise.push(`${r.unbekannte_codes.length} Code(s) unbekannt`);
+      if ((r.klassenstufen_hinweise || []).length) hinweise.push(`${r.klassenstufen_hinweise.length}× Klassenstufe außerhalb des Projekt-Rahmens`);
+      if (r.ueberbucht) hinweise.push('Projekt ist jetzt überbucht');
+      if (r.hinweis_entwurf) hinweise.push('Projekt ist noch im Entwurf — vor der Anmeldephase veröffentlichen');
+      if (hinweise.length) msg += ' — Hinweise: ' + hinweise.join(' · ');
+      showToast(msg, hinweise.length ? 'info' : 'success');
+      setAssignOpen(false);
+      clearSelection();
+      afterMutation();
+    } catch (e) {
+      showToast('Fehler: ' + (e && e.message || e), 'error');
+    } finally {
+      setAssignBusy(false);
+    }
+  };
+
+  const doBulkUnassign = async () => {
+    if (selectedCodes.size === 0 || assignBusy) return;
+    const betroffen = mockSchueler.filter(s => selectedCodes.has(s.code) && s.zuteilung).length;
+    if (betroffen === 0) { showToast('Keine der ausgewählten Schüler hat eine Zuordnung', 'info'); return; }
+    if (!window.confirm(`Zuordnung von ${betroffen} Schüler(n) wirklich aufheben?`)) return;
+    setAssignBusy(true);
+    try {
+      const r = await service.bulkAssign({ codes: Array.from(selectedCodes), projektId: null });
+      if (!r || r.success === false) {
+        showToast('Aufheben fehlgeschlagen: ' + ((r && r.error) || 'unbekannt'), 'error');
+        return;
+      }
+      showToast(`↩️ ${r.aufgehoben} Zuordnung(en) aufgehoben`, 'success');
+      clearSelection();
+      afterMutation();
+    } catch (e) {
+      showToast('Fehler: ' + (e && e.message || e), 'error');
+    } finally {
+      setAssignBusy(false);
+    }
+  };
+
+  // v38: CSV-Export — Backup/Weiterverarbeitung. Exportiert die aktuell
+  // gefilterte Liste (ohne Filter = alle) inkl. Status und Zuordnung.
+  // Funktioniert in Demo UND Live (Daten sind gemountet).
+  const exportSchuelerCSV = () => {
+    const rows = gefiltert.length > 0 ? gefiltert : mockSchueler;
+    const esc = (v) => {
+      const s = String(v ?? '');
+      return (s.includes(';') || s.includes('"') || s.includes('\n')) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const header = 'code;vorname;nachname;klasse;klassenstufe;status;zuteilung_projekt;fixiert';
+    const lines = rows.map(s => [
+      s.code, s.vorname, s.nachname, s.klasse, s.klassenstufe,
+      (s.fixiert && s.zuteilung) ? 'zugeordnet' : (s.hat_gewaehlt ? 'angemeldet' : 'fehlt'),
+      resolveProjektTitel(s.zuteilung) || '',
+      s.fixiert ? 'ja' : 'nein'
+    ].map(esc).join(';'));
+    const csv = '﻿' + [header, ...lines].join('\r\n'); // BOM für Excel-Umlaute
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'schueler-export-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+    showToast(`📤 ${rows.length} Schüler als CSV exportiert`, 'success');
+  };
+
+  // Projektliste fürs Zuordnungs-Modal: alle Projekte (auch Entwürfe — Vorab-Phase!),
+  // mit aktueller Belegung aus den gemounteten Schülerdaten.
+  const assignProjekte = useMemo(() => {
+    return [...mockProjekteData]
+      .map(p => ({
+        ...p,
+        belegt: mockSchueler.filter(s => s.zuteilung === p.id).length
+      }))
+      .sort((a, b) => String(a.titel).localeCompare(String(b.titel)));
+  }, [refreshKey, localKey, assignOpen]);
 
   const handleCSVUpload = (e) => {
     const file = e.target.files?.[0];
@@ -3085,6 +3317,7 @@ function SchuelerView({ refreshKey }) {
       <div class="btn-group">
         <input type="file" accept=".csv" onChange=${handleCSVUpload} style="display:none" id="csv-input" />
         <button class="btn btn-secondary" onClick=${() => document.getElementById('csv-input').click()}>📥 CSV importieren</button>
+        <button class="btn btn-secondary" data-testid="csv-export" onClick=${exportSchuelerCSV} title="Aktuell gefilterte Liste als CSV exportieren (Backup) — ohne Filter: alle Schüler">📤 CSV exportieren</button>
         <!-- Task #7: Info-Button CSV-Format -->
         <button class="btn btn-ghost btn-small" title="CSV-Format anzeigen" onClick=${() => setShowCsvInfo(true)}>ℹ️</button>
         ${showCsvInfo && html`
@@ -3115,7 +3348,7 @@ S002;Erika;Musterfrau;7b;7</pre>
           </div>
         `}
         <button class="btn btn-primary" onClick=${() => printSerienbriefe('visible')} title="Druckt die aktuell gefilterte Liste (oder alle, wenn kein Filter aktiv)">
-          🖨️ Serienbriefe drucken${(search || filter !== 'alle' || filterKlasse !== 'alle') ? ` (${gefiltert.length})` : ''}
+          🖨️ Serienbriefe drucken${(search || filter !== 'alle' || klasseAktiv) ? ` (${gefiltert.length})` : ''}
         </button>
       </div>
     </div>
@@ -3164,21 +3397,85 @@ S002;Erika;Musterfrau;7b;7</pre>
           </select>
         </div>
         <div class="input-group" style="margin:0;">
-          <label>Klasse</label>
-          <select value=${filterKlasse} onChange=${e => setFilterKlasse(e.target.value)}>
-            <option value="alle">Alle Klassen</option>
-            ${klassenListe.map(k => html`<option value=${k}>${k.toUpperCase()}</option>`)}
-          </select>
+          <label>Klassen ${klasseAktiv ? `(${filterKlassen.size} gewählt)` : '(alle)'}</label>
+          <details class="klassen-filter" data-testid="klassen-filter" style="position:relative;">
+            <summary style="list-style:none;cursor:pointer;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg, #fff);user-select:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;">
+              ${klasseAktiv ? Array.from(filterKlassen).sort().map(k => k.toUpperCase()).join(', ') : 'Alle Klassen'} ▾
+            </summary>
+            <div style="position:absolute;z-index:50;top:calc(100% + 4px);left:0;min-width:200px;max-height:260px;overflow-y:auto;background:var(--bg, #fff);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:8px;">
+              <label style="display:flex;align-items:center;gap:8px;padding:4px 6px;cursor:pointer;font-weight:600;">
+                <input type="checkbox" checked=${!klasseAktiv} onChange=${resetKlassen} />
+                Alle Klassen
+              </label>
+              <div style="border-top:1px solid var(--border);margin:4px 0;"></div>
+              ${klassenListe.map(k => html`
+                <label key=${k} style="display:flex;align-items:center;gap:8px;padding:4px 6px;cursor:pointer;">
+                  <input type="checkbox" checked=${filterKlassen.has(k)} onChange=${() => toggleKlasse(k)} />
+                  ${k.toUpperCase()}
+                </label>
+              `)}
+            </div>
+          </details>
         </div>
       </div>
       ${selectedCodes.size > 0 && html`
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;padding:10px 12px;background:var(--bg-subtle, #f1f5f9);border-radius:6px;">
           <strong>${selectedCodes.size} Schüler ausgewählt</strong>
-          <button class="btn btn-primary btn-small" onClick=${() => printSerienbriefe('selection')}>
+          <button class="btn btn-primary btn-small" data-testid="bulk-assign-open" onClick=${() => { setAssignProjektId(''); setAssignOpen(true); }}>
+            📌 Projekt zuordnen (${selectedCodes.size})
+          </button>
+          <button class="btn btn-secondary btn-small" data-testid="bulk-unassign" onClick=${doBulkUnassign} disabled=${assignBusy}>
+            ↩️ Zuordnung aufheben
+          </button>
+          <button class="btn btn-ghost btn-small" onClick=${() => printSerienbriefe('selection')}>
             🖨️ Auswahl drucken (${selectedCodes.size})
           </button>
-          <button class="btn btn-ghost btn-small" onClick=${clearSelection}>Auswahl aufheben</button>
-          <span style="margin-left:auto;font-size:12px;color:var(--text-muted);">Tipp: Bei verlorenem Code Schüler anhaken und „Auswahl drucken".</span>
+          <button class="btn btn-ghost btn-small" onClick=${clearSelection}>Auswahl abwählen</button>
+          <span style="margin-left:auto;font-size:12px;color:var(--text-muted);">Tipp: Klassenfilter setzen → Kopf-Checkbox → ganze Klassen auf einmal zuordnen.</span>
+        </div>
+      `}
+      ${assignOpen && html`
+        <div class="modal-overlay" onClick=${() => !assignBusy && setAssignOpen(false)}>
+          <div class="modal-content" onClick=${e => e.stopPropagation()} style="max-width:560px;" data-testid="bulk-assign-modal">
+            <button class="modal-close" onClick=${() => setAssignOpen(false)} aria-label="Schließen">×</button>
+            <h2>📌 ${selectedCodes.size} Schüler einem Projekt zuordnen</h2>
+            <p style="font-size:13px;color:var(--text-muted);margin-top:4px;">
+              Die Zuordnung ist <strong>fixiert</strong>: Diese Schüler müssen nicht mehr wählen,
+              die Verlosung überspringt sie und rechnet ihre Plätze an.
+            </p>
+            <div class="input-group">
+              <label>Projekt *</label>
+              <select data-testid="bulk-assign-projekt" value=${assignProjektId} onChange=${e => setAssignProjektId(e.target.value)}>
+                <option value="">— Projekt wählen —</option>
+                ${assignProjekte.map(p => html`
+                  <option key=${p.id} value=${p.id}>
+                    ${p.titel} · Kl. ${p.min_klasse}–${p.max_klasse} · ${p.belegt}/${p.max_plaetze} belegt${p.status === 'entwurf' ? ' · ⚠️ Entwurf' : ''}
+                  </option>
+                `)}
+              </select>
+            </div>
+            ${(() => {
+              const p = assignProjekte.find(x => x.id === assignProjektId);
+              if (!p) return null;
+              const ausserhalb = mockSchueler.filter(s => selectedCodes.has(s.code) && (s.klassenstufe < p.min_klasse || s.klassenstufe > p.max_klasse));
+              const schonZugeordnet = mockSchueler.filter(s => selectedCodes.has(s.code) && s.zuteilung && s.zuteilung !== p.id);
+              const neuBelegt = p.belegt + selectedCodes.size;
+              return html`
+                <div style="font-size:13px;display:flex;flex-direction:column;gap:6px;margin:8px 0 4px;">
+                  <div>Neue Belegung: <strong>${neuBelegt}/${p.max_plaetze}</strong>${neuBelegt > p.max_plaetze ? html` <span style="color:var(--error);">— überbucht!</span>` : ''}</div>
+                  ${ausserhalb.length > 0 && html`<div style="color:var(--warning, #b45309);">⚠️ ${ausserhalb.length} Schüler außerhalb der Klassenstufe ${p.min_klasse}–${p.max_klasse}: ${ausserhalb.slice(0, 8).map(s => s.vorname + ' (' + s.klasse + ')').join(', ')}${ausserhalb.length > 8 ? ' …' : ''}</div>`}
+                  ${schonZugeordnet.length > 0 && html`<div style="color:var(--warning, #b45309);">⚠️ ${schonZugeordnet.length} Schüler haben bereits eine andere Zuordnung — sie wird überschrieben.</div>`}
+                  ${p.status === 'entwurf' && html`<div style="color:var(--warning, #b45309);">⚠️ Projekt ist noch im Entwurf. Zuordnen geht trotzdem — vor der Anmeldephase veröffentlichen.</div>`}
+                </div>
+              `;
+            })()}
+            <div class="btn-group" style="margin-top:16px;">
+              <button class="btn btn-ghost" onClick=${() => setAssignOpen(false)} disabled=${assignBusy}>Abbrechen</button>
+              <button class="btn btn-success" data-testid="bulk-assign-confirm" onClick=${doBulkAssign} disabled=${assignBusy || !assignProjektId}>
+                ${assignBusy ? '⏳ Wird zugeordnet…' : `✓ ${selectedCodes.size} Schüler zuordnen`}
+              </button>
+            </div>
+          </div>
         </div>
       `}
     </div>
@@ -3211,7 +3508,7 @@ S002;Erika;Musterfrau;7b;7</pre>
               <div class="empty-state">
                 <span class="empty-emoji">🔍</span>
                 <div class="empty-title">Keine Schüler gefunden</div>
-                <div class="empty-hint">${search || filter !== 'alle' || filterKlasse !== 'alle' ? 'Passe Suche oder Filter an, oder importiere Schüler via CSV-Import.' : 'Noch keine Schüler angelegt. Nutze den CSV-Import in der Setup-Phase.'}</div>
+                <div class="empty-hint">${search || filter !== 'alle' || klasseAktiv ? 'Passe Suche oder Filter an, oder importiere Schüler via CSV-Import.' : 'Noch keine Schüler angelegt. Nutze den CSV-Import in der Setup-Phase.'}</div>
               </div>
             </td></tr>
           ` : gefiltert.map(s => html`
@@ -3227,7 +3524,9 @@ S002;Erika;Musterfrau;7b;7</pre>
               <td style="font-family:monospace;">${s.code}</td>
               <td>${s.vorname} ${s.nachname}</td>
               <td>${s.klasse}</td>
-              <td>${s.hat_gewaehlt ? html`<span class="pill pill-success">✓ angemeldet</span>` : html`<span class="pill pill-warning">⏳ fehlt</span>`}</td>
+              <td>${s.fixiert && s.zuteilung
+                ? html`<span class="pill pill-info" title="Vorab fest zugeordnet — muss nicht wählen, Verlosung überspringt diesen Schüler">📌 zugeordnet</span>`
+                : s.hat_gewaehlt ? html`<span class="pill pill-success">✓ angemeldet</span>` : html`<span class="pill pill-warning">⏳ fehlt</span>`}</td>
               <td>${resolveProjektTitel(s.zuteilung) || s.zuteilung || '—'}</td>
               <td class="actions-cell">
                 <button class="btn btn-ghost btn-small" onClick=${() => printSerienbriefe('override', [s])} title=${`Nur Brief für ${s.vorname} ${s.nachname} drucken`}>🖨️ Brief</button>
@@ -5996,34 +6295,153 @@ function PhaseView({ phase, setPhase }) {
 }
 
 // === EINSTELLUNGEN ===
+// v37: Termin hübsch formatieren — "2026-07-10T23:59" → "10.07.2026, 23:59 Uhr"
+function fmtTermin(v) {
+  if (!v) return '';
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return v;
+  const datum = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  if (String(v).includes('T')) {
+    return datum + ', ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr';
+  }
+  return datum;
+}
+
+// v37 (Stretch): Hinweis-Banner, wenn eine Deadline überschritten ist, die Phase
+// aber noch nicht manuell weitergeschaltet wurde. KEIN Auto-Phasenwechsel!
+function DeadlineBanner({ phase }) {
+  const service = useMemo(() => new window.KrsDataService(), []);
+  const [termine, setTermine] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const t = await service.getTermine();
+        if (!cancelled) setTermine(t);
+      } catch (e) { console.warn('[admin] DeadlineBanner getTermine:', e); }
+    })();
+    return () => { cancelled = true; };
+  }, [service, phase]);
+  if (!termine) return null;
+  const now = new Date();
+  const past = (v) => { if (!v) return false; const d = new Date(v); return !isNaN(d.getTime()) && d < now; };
+  let msg = null;
+  if (phase === 'anmeldung' && past(termine.anmelde_deadline)) {
+    msg = 'Die Anmelde-Deadline (' + fmtTermin(termine.anmelde_deadline) + ') ist überschritten — die Phase steht noch auf „Anmeldung läuft".';
+  } else if (phase === 'nachbearbeitung' && past(termine.tausch_deadline)) {
+    msg = 'Die Tausch-Deadline (' + fmtTermin(termine.tausch_deadline) + ') ist überschritten — die Phase steht noch auf „Nachbearbeitung".';
+  }
+  if (!msg) return null;
+  return html`
+    <div data-testid="deadline-banner"
+         style="background:#fff8e6;border:1px solid #f5b335;border-radius:8px;padding:10px 16px;margin:0 0 16px;color:#7a5a00;font-size:14px;">
+      ⏰ ${msg} Wenn es so weit ist, kannst du die Phase im Bereich „Phase" umschalten.
+    </div>
+  `;
+}
+
+// v37: Einstellungen-View — an system_settings angebunden (vorher Attrappe).
+// Lädt die 4 Termin-Keys via getTermine(), speichert via setSystemSetting().
+// Die Termine sind reine Anzeige-/Hinweis-Werte; die Phase bleibt der manuelle Master-Schalter.
 function EinstellungenView() {
+  const service = useMemo(() => new window.KrsDataService(), []);
+  const [termine, setTermine] = useState(null);   // null = lädt noch
+  const [loadError, setLoadError] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadError(null);
+    (async () => {
+      try {
+        const t = await service.getTermine();
+        if (!cancelled) setTermine({
+          anmelde_deadline: t.anmelde_deadline || '',
+          tausch_deadline: t.tausch_deadline || '',
+          projekttage_beginn: t.projekttage_beginn || '',
+          projekttage_ende: t.projekttage_ende || ''
+        });
+      } catch (e) {
+        console.error('[admin] getTermine failed:', e);
+        if (!cancelled) setLoadError(e.message || 'Termine konnten nicht geladen werden');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [service, reloadKey]);
+
+  const setField = (key) => (e) => setTermine(t => ({ ...t, [key]: e.target.value }));
+
+  const save = async () => {
+    const t = termine;
+    // Plausibilitätschecks — ISO-Strings sind lexikographisch vergleichbar
+    if (t.anmelde_deadline && t.tausch_deadline && t.anmelde_deadline >= t.tausch_deadline) {
+      showToast('Die Anmelde-Deadline muss vor der Tausch-Deadline liegen.', 'error');
+      return;
+    }
+    if (t.projekttage_beginn && t.projekttage_ende && t.projekttage_beginn > t.projekttage_ende) {
+      showToast('Projekttage: Der Beginn muss vor dem Ende liegen.', 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      for (const key of window.TERMIN_KEYS) {
+        await service.setSystemSetting(key, t[key] || null);
+      }
+      showToast('Termine gespeichert.', 'success');
+    } catch (e) {
+      console.error('[admin] Termine speichern failed:', e);
+      showToast('Speichern fehlgeschlagen: ' + (e.message || e), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return html`
     <div class="main-header">
       <h1 class="main-title">🛠️ Einstellungen</h1>
     </div>
     <div class="card">
       <h2>Termine</h2>
-      <div class="form-row">
-        <div class="input-group">
-          <label>Anmelde-Deadline</label>
-          <input type="text" value="2026-07-10 23:59" />
+      ${loadError && html`
+        <div style="background:#fdecea;border:1px solid var(--error,#c0392b);border-radius:8px;padding:12px 16px;margin:12px 0;color:var(--error,#c0392b);">
+          ⚠️ ${loadError}
+          <button class="btn btn-secondary" style="margin-left:12px" onClick=${() => setReloadKey(k => k + 1)}>Erneut laden</button>
         </div>
-        <div class="input-group">
-          <label>Tausch-Deadline</label>
-          <input type="text" value="2026-07-17 23:59" />
+      `}
+      ${!termine && !loadError && html`<p style="color:var(--text-muted,#888)">Termine werden geladen …</p>`}
+      ${termine && html`
+        <p style="color:var(--text-muted,#888);font-size:13px;margin:4px 0 12px">
+          Diese Termine werden den Schüler:innen angezeigt. Der Phasenwechsel bleibt manuell (Bereich „Phase").
+        </p>
+        <div class="form-row">
+          <div class="input-group">
+            <label>Anmelde-Deadline</label>
+            <input type="datetime-local" data-testid="termin-anmelde-deadline"
+                   value=${termine.anmelde_deadline} onInput=${setField('anmelde_deadline')} />
+          </div>
+          <div class="input-group">
+            <label>Tausch-Deadline</label>
+            <input type="datetime-local" data-testid="termin-tausch-deadline"
+                   value=${termine.tausch_deadline} onInput=${setField('tausch_deadline')} />
+          </div>
         </div>
-      </div>
-      <div class="form-row">
-        <div class="input-group">
-          <label>Projekttage Beginn</label>
-          <input type="text" value="2026-07-21" />
+        <div class="form-row">
+          <div class="input-group">
+            <label>Projekttage Beginn</label>
+            <input type="date" data-testid="termin-projekttage-beginn"
+                   value=${termine.projekttage_beginn} onInput=${setField('projekttage_beginn')} />
+          </div>
+          <div class="input-group">
+            <label>Projekttage Ende</label>
+            <input type="date" data-testid="termin-projekttage-ende"
+                   value=${termine.projekttage_ende} onInput=${setField('projekttage_ende')} />
+          </div>
         </div>
-        <div class="input-group">
-          <label>Projekttage Ende</label>
-          <input type="text" value="2026-07-23" />
-        </div>
-      </div>
-      <button class="btn btn-primary">Speichern</button>
+        <button class="btn btn-primary" data-testid="termine-speichern" disabled=${saving} onClick=${save}>
+          ${saving ? 'Speichert …' : 'Speichern'}
+        </button>
+      `}
     </div>
   `;
 }
