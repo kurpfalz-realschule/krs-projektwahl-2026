@@ -401,14 +401,19 @@
     }
 
     // Bugfix: NOT-NULL-Spalten in projekte normalisieren, bevor sie an Supabase gehen.
-    // kurzbeschreibung darf in der DB nicht null sein — Caller schickten teilweise null
-    // bei leerer Eingabe (z.B. v3-Form). Static-Method ist die letzte Verteidigungslinie.
+    // NOT-NULL-Felder dürfen niemals null/undefined an die DB gehen.
+    // Static-Method ist die letzte Verteidigungslinie vor dem INSERT/UPDATE.
     static normalizeProjektPayload(p) {
       const out = { ...p };
+      // kurzbeschreibung: TEXT NOT NULL — leerer String ist OK, null/undefined nicht.
       if (out.kurzbeschreibung === null || out.kurzbeschreibung === undefined) {
         out.kurzbeschreibung = '';
       } else {
         out.kurzbeschreibung = String(out.kurzbeschreibung).trim();
+      }
+      // titel: TEXT NOT NULL — gleiche Absicherung.
+      if (out.titel !== undefined && out.titel !== null) {
+        out.titel = String(out.titel).trim();
       }
       return out;
     }

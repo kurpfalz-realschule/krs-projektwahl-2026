@@ -491,13 +491,20 @@ footer a:hover{text-decoration:underline}
       return data || [];
     }
     async createProjekt(payload) {
+      // Defensive Normalisierung: kurzbeschreibung darf nicht null/undefined sein (DB: NOT NULL)
+      const safe = { ...payload };
+      if (safe.kurzbeschreibung === null || safe.kurzbeschreibung === undefined) {
+        safe.kurzbeschreibung = '';
+      } else {
+        safe.kurzbeschreibung = String(safe.kurzbeschreibung).trim();
+      }
       if (this.isDemo) {
         const id = (crypto.randomUUID && crypto.randomUUID()) || String(Date.now());
-        const neu = { id, ...payload, created_at: new Date().toISOString() };
+        const neu = { id, ...safe, created_at: new Date().toISOString() };
         (window.MOCK_PROJEKTE ||= []).push(neu);
         return neu;
       }
-      const { data, error } = await this.client.from('projekte').insert(payload).select('*').single();
+      const { data, error } = await this.client.from('projekte').insert(safe).select('*').single();
       if (error) throw new Error('createProjekt: ' + error.message);
       return data;
     }

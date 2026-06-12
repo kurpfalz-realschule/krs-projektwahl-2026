@@ -583,14 +583,19 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
       return data || [];
     }
     // Bugfix: NOT-NULL-Spalten in projekte normalisieren, bevor sie an Supabase gehen.
-    // kurzbeschreibung darf in der DB nicht null sein — Caller schickten teilweise null
-    // bei leerer Eingabe (z.B. v3-Form). Static-Method ist die letzte Verteidigungslinie.
+    // NOT-NULL-Felder dürfen niemals null/undefined an die DB gehen.
+    // Static-Method ist die letzte Verteidigungslinie vor dem INSERT/UPDATE.
     static normalizeProjektPayload(p) {
       const out = { ...p };
+      // kurzbeschreibung: TEXT NOT NULL — leerer String ist OK, null/undefined nicht.
       if (out.kurzbeschreibung === null || out.kurzbeschreibung === undefined) {
         out.kurzbeschreibung = '';
       } else {
         out.kurzbeschreibung = String(out.kurzbeschreibung).trim();
+      }
+      // titel: TEXT NOT NULL — gleiche Absicherung.
+      if (out.titel !== undefined && out.titel !== null) {
+        out.titel = String(out.titel).trim();
       }
       return out;
     }
@@ -4172,7 +4177,10 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
                     // (z.B. bei super_admin-Maintenance) nicht greift.
                     const payload = {
                       titel: formData.titel,
-                      kurzbeschreibung: formData.kurzbeschreibung,
+                      // Bugfix: leerer String statt null/undefined — DB-Spalte ist NOT NULL.
+                      // Stale-Closure bei schnellem Tippen konnte formData.kurzbeschreibung
+                      // auf undefined zurücksetzen → NOT NULL constraint violation.
+                      kurzbeschreibung: (formData.kurzbeschreibung || '').trim(),
                       langbeschreibung: formData.langbeschreibung || null,
                       ort: formData.ort || null,
                       lehrer_id: effectiveOwnerId,
@@ -4189,7 +4197,8 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
                     // Whitelist: Backend-Trigger blockt alles andere.
                     const payload = {
                       titel: formData.titel,
-                      kurzbeschreibung: formData.kurzbeschreibung,
+                      // Bugfix: defensiver Fallback analog createProjekt
+                      kurzbeschreibung: (formData.kurzbeschreibung || '').trim(),
                       langbeschreibung: formData.langbeschreibung || null,
                       ort: formData.ort || null,
                     };
@@ -4213,7 +4222,7 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
                       mockProjekteData[idx] = {
                         ...mockProjekteData[idx],
                         titel: formData.titel,
-                        kurzbeschreibung: formData.kurzbeschreibung,
+                        kurzbeschreibung: (formData.kurzbeschreibung || '').trim(),
                         langbeschreibung: formData.langbeschreibung,
                         ort: formData.ort,
                         bild_url: formData.bild_url,
