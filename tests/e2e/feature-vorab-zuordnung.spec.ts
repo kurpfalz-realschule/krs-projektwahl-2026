@@ -35,8 +35,10 @@ async function openSchuelerTabMitSeed(page: any) {
 async function filtere7aUnd7d(page: any) {
   const filter = page.getByTestId('klassen-filter');
   await filter.locator('summary').click();
-  await filter.locator('label').filter({ hasText: /^7A$/i }).locator('input').check();
-  await filter.locator('label').filter({ hasText: /^7D$/i }).locator('input').check();
+  // String-hasText trimmt und matcht case-insensitiv als Substring —
+  // Regex mit ^…$ würde am Whitespace im Label scheitern.
+  await filter.locator('label').filter({ hasText: '7A' }).locator('input').check();
+  await filter.locator('label').filter({ hasText: '7D' }).locator('input').check();
   // Dropdown schließen (Klick außerhalb)
   await page.locator('h1').first().click();
   await page.waitForTimeout(150);
