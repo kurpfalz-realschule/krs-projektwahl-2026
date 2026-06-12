@@ -12,7 +12,7 @@
 // Schriesheim (KRS) — der Pilot-Werkstatt. Pilot-Schulen ersetzen die
 // Werte komplett, der Schlüssel-Aufbau bleibt unverändert.
 //
-// Master-Repo: https://github.com/BenditoT/krs-projektwahl-2026
+// Master-Repo: https://github.com/kurpfalz-realschule/krs-projektwahl-2026
 // Lizenz: CC BY-NC 4.0 (siehe LICENSE)
 // ============================================================
 (function () {
@@ -51,8 +51,8 @@
       publishableKey: 'sb_publishable_kdZSmagc_sbq9qwynebcxw_hKdhyDt1'
     },
     deploy: {
-      frontend_url: 'https://benditot.github.io/krs-projektwahl-2026/',
-      schueler_url: 'https://benditot.github.io/krs-projektwahl-2026/schueler.html'
+      frontend_url: 'https://kurpfalz-realschule.github.io/krs-projektwahl-2026/',
+      schueler_url: 'https://kurpfalz-realschule.github.io/krs-projektwahl-2026/schueler.html'
     }
   };
 

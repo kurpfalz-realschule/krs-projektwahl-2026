@@ -10,7 +10,7 @@
 
 2. **In Supabase Dashboard → Authentication → Users → Invite User:**
    - E-Mail: Nadines Dienst-E-Mail
-   - Redirect URL: `https://benditot.github.io/krs-projektwahl-2026/admin-dashboard-v2.html`
+   - Redirect URL: `https://kurpfalz-realschule.github.io/krs-projektwahl-2026/admin-dashboard-v2.html`
    - Klick auf „Invite" → Supabase schickt Magic Link
 
 3. **Parallele E-Mail an Nadine** (optional, falls Supabase-Mail im Spam landet):
@@ -26,7 +26,7 @@ ab sofort hast du Zugang zur Projektwahl-App für die Projektwoche 2026. Als Pro
 Du bekommst (oder hast bereits bekommen) eine E-Mail von noreply@supabase.io mit einem Link zur Passwort-Einrichtung. Bitte klick darauf und leg ein Passwort fest.
 
 Danach erreichst du die App unter:
-https://benditot.github.io/krs-projektwahl-2026/admin-dashboard-v2.html
+https://kurpfalz-realschule.github.io/krs-projektwahl-2026/admin-dashboard-v2.html
 
 Login: deine Schul-E-Mail + das gerade festgelegte Passwort.
 

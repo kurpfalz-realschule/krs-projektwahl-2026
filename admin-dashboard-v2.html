@@ -1013,7 +1013,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v38';
+  window.KRS_VERSION = 'v39';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -3192,7 +3192,7 @@ function SchuelerView({ refreshKey, reload }) {
   // Wichtig für den Anwendungsfall „Code verloren": der User filtert nach
   // Klasse oder sucht den Schüler, hakt ihn an, und druckt nur die Auswahl.
   // =====================================================================
-  const printSerienbriefe = (scope = 'visible', overrideList = null) => {
+  const printSerienbriefe = async (scope = 'visible', overrideList = null) => {
     let list;
     if (Array.isArray(overrideList)) {
       list = overrideList;
@@ -3210,7 +3210,29 @@ function SchuelerView({ refreshKey, reload }) {
 
     const heute = new Date().toLocaleDateString('de-DE', { day: '2-digit', month: 'long', year: 'numeric' });
     const frontendUrl = (window.KRS_SUPABASE && window.KRS_SUPABASE.schueler_url)
-      || 'https://benditot.github.io/krs-projektwahl-2026/schueler.html';
+      || 'https://kurpfalz-realschule.github.io/krs-projektwahl-2026/schueler.html';
+
+    // v39: Pro Schüler einen QR-Code erzeugen — öffnet die Anmeldeseite mit
+    // vorausgefülltem Code (?code=…). Clientseitig via esm.sh/qrcode, kein
+    // externer QR-Dienst (Datenschutz). Graceful Degradation: ohne Lib → ohne QR.
+    let qrFor = () => '';
+    try {
+      const QRMod = await import('https://esm.sh/qrcode@1.5.4');
+      const toDataURL = QRMod.toDataURL || (QRMod.default && QRMod.default.toDataURL);
+      if (typeof toDataURL === 'function') {
+        const qrMap = {};
+        for (const s of list) {
+          qrMap[s.code] = await toDataURL(
+            frontendUrl + '?code=' + encodeURIComponent(s.code),
+            { width: 240, margin: 1, errorCorrectionLevel: 'M' }
+          );
+        }
+        qrFor = (code) => qrMap[code] || '';
+      }
+    } catch (e) {
+      console.warn('[KRS] QR-Code-Generierung nicht verfügbar:', e);
+      showToast('Hinweis: QR-Codes konnten nicht erzeugt werden — Briefe werden ohne QR gedruckt', 'info');
+    }
 
     const T = window.TENANT || {};
     const TH = window.TENANT_HELPERS || {};
@@ -3250,6 +3272,11 @@ function SchuelerView({ refreshKey, reload }) {
           <div class="code-label">Dein Anmeldecode</div>
           <div class="code-value">${escapeHtml(s.code)}</div>
           <div class="code-hint">Bitte gut aufheben — nur mit diesem Code kannst du wählen.</div>
+          ${qrFor(s.code) ? `
+          <div class="code-qr">
+            <img src="${qrFor(s.code)}" alt="QR-Code zur Anmeldung" />
+            <div class="qr-hint">… oder einfach scannen — dein Code ist dann schon eingetragen</div>
+          </div>` : ''}
         </div>
         <p><strong>Anmeldeschluss:</strong> 15. Juni 2026, 23:59 Uhr.</p>
         <p>Bei Fragen wende dich an deine Klassenlehrerin oder deinen Klassenlehrer.</p>
@@ -3280,6 +3307,9 @@ function SchuelerView({ refreshKey, reload }) {
   .code-label { font-size: 10pt; text-transform: uppercase; letter-spacing: 0.1em; color: #555; margin-bottom: 3mm; }
   .code-value { font-size: 28pt; font-weight: bold; letter-spacing: 0.12em; font-family: 'Courier New', Courier, monospace; }
   .code-hint { font-size: 9pt; color: #666; margin-top: 3mm; }
+  .code-qr { margin-top: 4mm; }
+  .code-qr img { width: 28mm; height: 28mm; }
+  .qr-hint { font-size: 9pt; color: #666; margin-top: 1mm; }
   .toolbar { position: sticky; top: 0; background: #1b1e25; color: #fff; padding: 10px 16px; display: flex; gap: 10px; align-items: center; }
   .toolbar button { background: #4cae4f; color: #fff; border: none; padding: 8px 16px; font-size: 14px; border-radius: 4px; cursor: pointer; font-family: inherit; }
   .toolbar button.ghost { background: transparent; border: 1px solid #fff; }
@@ -4415,7 +4445,7 @@ function KlassenlehrerView({ refreshKey, currentDbUserId }) {
     }
     const heute = new Date().toLocaleDateString('de-DE', { day: '2-digit', month: 'long', year: 'numeric' });
     const url = (window.KRS_SUPABASE && window.KRS_SUPABASE.schueler_url)
-      || 'https://benditot.github.io/krs-projektwahl-2026/schueler.html';
+      || 'https://kurpfalz-realschule.github.io/krs-projektwahl-2026/schueler.html';
     const klasseUC = (klasse || '').toUpperCase();
     const w = window.open('', '_blank', 'width=820,height=1100');
     if (!w) {
