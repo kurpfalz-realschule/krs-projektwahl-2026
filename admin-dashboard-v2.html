@@ -856,7 +856,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
           return { success: false, error: 'demo_algorithmus_nicht_geladen' };
         }
         const algo = new window.VerteilungsAlgorithmus();
-        const projekte = (window.MOCK_PROJEKTE || []).map(normalizeMockProjekt);
+        // v38: Projekt-Quelle — im Admin gibt es window.MOCK_PROJEKTE nicht,
+        // dort sind die Demo-Projekte in window.mockProjekteData gemountet.
+        const projekte = (window.MOCK_PROJEKTE && window.MOCK_PROJEKTE.length)
+          ? window.MOCK_PROJEKTE.map(normalizeMockProjekt)
+          : ((window.mockProjekteData || []).filter(p => p.status === 'veroeffentlicht'));
         const schueler = (typeof window.generateTestSchueler === 'function')
           ? window.generateTestSchueler(projekte) : [];
         // v38: fixierte Vorab-Zuordnungen aus dem Schüler-Tab respektieren
@@ -917,8 +921,10 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
       if (cleanCodes.length === 0) return { success: false, error: 'keine_codes' };
       if (this.isDemo) {
         const list = (typeof window !== 'undefined' && window.mockSchueler) || [];
+        // Projekt-Lookup in den Admin-Mock-Daten (window.mockProjekteData) —
+        // window.MOCK_PROJEKTE existiert nur in der Schüler-App!
         const projekt = projektId
-          ? ((window.MOCK_PROJEKTE || []).map(normalizeMockProjekt).find(p => p.id === projektId) || null)
+          ? ((window.mockProjekteData || []).find(p => p.id === projektId) || null)
           : null;
         if (projektId && !projekt) return { success: false, error: 'projekt_unbekannt' };
         let zugeordnet = 0, aufgehoben = 0;
