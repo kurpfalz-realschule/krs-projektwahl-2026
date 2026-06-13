@@ -42,11 +42,15 @@ test.describe('Smoke: Projekt-CRUD', () => {
     await page.waitForTimeout(200);
 
     await page.locator('.modal-content').getByRole('button', { name: /speichern/i }).click();
-    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 5_000 });
+    // Erst auf den Erfolgs-Toast warten (deterministisches Signal, dass der Save-
+    // Handler durch ist) — dann auf das Schließen des Modals prüfen. Großzügige
+    // Timeouts, damit der Test auf langsamen/ausgelasteten CI-Runnern nicht flaky wird.
+    await expect(page.locator('.toast.success').first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 15_000 });
 
     // Direkter DOM-Check: neues Projekt muss in der Tabelle erscheinen
     // (möglich dank key=${p.id} Fix in admin-dashboard-v2.html — Bug 1 E0)
-    await expect(page.locator('table tbody').getByText(uniqueTitel).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('table tbody').getByText(uniqueTitel).first()).toBeVisible({ timeout: 15_000 });
   });
 
   test('Zwei Lehrer aktivieren 24 Plätze und die +/- Schalter funktionieren', async ({ appPage: page }) => {
