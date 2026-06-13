@@ -528,6 +528,24 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
       if (error) throw new Error('listSchueler: ' + error.message);
       return data || [];
     }
+    // v40: Schüler aktiv/inaktiv schalten. Inaktiv = von Wahl + Verlosung
+    // ausgeschlossen; Wahl/Zuteilung werden serverseitig gelöscht.
+    async setSchuelerAktiv({ code, aktiv }) {
+      const cleanCode = String(code || '').toUpperCase().trim();
+      if (!cleanCode) return { success: false, error: 'code_fehlt' };
+      if (this.isDemo) {
+        const list = (typeof window !== 'undefined' && window.mockSchueler) || [];
+        const s = list.find(x => String(x.code || '').toUpperCase() === cleanCode);
+        if (!s) return { success: false, error: 'schueler_unbekannt' };
+        s.aktiv = !!aktiv;
+        if (!aktiv) { s.hat_gewaehlt = false; s.zuteilung = null; s.fixiert = false; }
+        try { window.dispatchEvent(new Event('krs:mock-seeded')); } catch (_) {}
+        return { success: true, code: cleanCode, aktiv: !!aktiv };
+      }
+      const { data, error } = await this.client.rpc('set_schueler_aktiv', { p_code: cleanCode, p_aktiv: !!aktiv });
+      if (error) throw new Error('setSchuelerAktiv: ' + error.message);
+      return data || { success: false, error: 'keine_antwort' };
+    }
     async getSchuelerStatus(code) {
       const cleanCode = String(code || '').toUpperCase().trim();
       if (!cleanCode) return { success: false, error: 'code_fehlt' };
@@ -2179,12 +2197,12 @@ const MOCK_STATS = {
 
 // Globale Mock-Daten (können sich durch User-Aktionen ändern)
 let mockSchueler = [
-  { "code": "5A-DEMO1", "vorname": "Max", "nachname": "Mustermann", "klasse": "5a", "klassenstufe": 5, "hat_gewaehlt": false, "zuteilung": null },
-  { "code": "6B-DEMO2", "vorname": "Lisa", "nachname": "Musterfrau", "klasse": "6b", "klassenstufe": 6, "hat_gewaehlt": true, "zuteilung": null },
-  { "code": "7C-DEMO3", "vorname": "Tom", "nachname": "Beispiel", "klasse": "7c", "klassenstufe": 7, "hat_gewaehlt": false, "zuteilung": null },
-  { "code": "8A-DEMO4", "vorname": "Anna", "nachname": "Demo", "klasse": "8a", "klassenstufe": 8, "hat_gewaehlt": true, "zuteilung": null },
-  { "code": "9D-DEMO5", "vorname": "Ben", "nachname": "Test", "klasse": "9d", "klassenstufe": 9, "hat_gewaehlt": false, "zuteilung": null },
-  { "code": "10B-DEMO6", "vorname": "Mia", "nachname": "Probe", "klasse": "10b", "klassenstufe": 10, "hat_gewaehlt": true, "zuteilung": null }
+  { "code": "5A-DEMO1", "vorname": "Max", "nachname": "Mustermann", "klasse": "5a", "klassenstufe": 5, "hat_gewaehlt": false, "zuteilung": null, "aktiv": true },
+  { "code": "6B-DEMO2", "vorname": "Lisa", "nachname": "Musterfrau", "klasse": "6b", "klassenstufe": 6, "hat_gewaehlt": true, "zuteilung": null, "aktiv": true },
+  { "code": "7C-DEMO3", "vorname": "Tom", "nachname": "Beispiel", "klasse": "7c", "klassenstufe": 7, "hat_gewaehlt": false, "zuteilung": null, "aktiv": true },
+  { "code": "8A-DEMO4", "vorname": "Anna", "nachname": "Demo", "klasse": "8a", "klassenstufe": 8, "hat_gewaehlt": true, "zuteilung": null, "aktiv": true },
+  { "code": "9D-DEMO5", "vorname": "Ben", "nachname": "Test", "klasse": "9d", "klassenstufe": 9, "hat_gewaehlt": false, "zuteilung": null, "aktiv": true },
+  { "code": "10B-DEMO6", "vorname": "Mia", "nachname": "Probe", "klasse": "10b", "klassenstufe": 10, "hat_gewaehlt": true, "zuteilung": null, "aktiv": true }
 ];
 let mockLehrerData = [...MOCK_LEHRER];
 let mockProjekteData = [...MOCK_PROJEKTE_ADMIN];
@@ -2468,7 +2486,8 @@ function App() {
         klassenstufe: s.klassenstufe,
         hat_gewaehlt: !!s.hat_gewaehlt,
         zuteilung: s.zuteilung || null,
-        fixiert: !!s.fixiert
+        fixiert: !!s.fixiert,
+        aktiv: s.aktiv !== false
       })));
       replaceArray(mockProjekteData, (projekte || []).map(p => ({
         id: p.id,
@@ -2980,13 +2999,23 @@ function SchuelerView({ refreshKey, reload }) {
 
   const gefiltert = mockSchueler.filter(s => {
     const q = search.toLowerCase();
+    const aktiv = s.aktiv !== false; // undefined/true = aktiv
     const matchSearch = !q || s.vorname.toLowerCase().includes(q) || s.nachname.toLowerCase().includes(q) || s.code.toLowerCase().includes(q);
-    const matchFilter = filter === 'alle'
-      || (filter === 'angemeldet' && s.hat_gewaehlt)
-      || (filter === 'fehlt' && !s.hat_gewaehlt);
+    // v40: Inaktive sind aus allen normalen Ansichten ausgeblendet.
+    // Nur der Status-Filter "inaktiv" zeigt sie (ausgegraut).
+    const matchFilter = filter === 'inaktiv' ? !aktiv
+      : filter === 'angemeldet' ? (aktiv && s.hat_gewaehlt)
+      : filter === 'fehlt' ? (aktiv && !s.hat_gewaehlt)
+      : aktiv; // 'alle' = nur aktive
     const matchKlasse = !klasseAktiv || (s.klasse && filterKlassen.has(String(s.klasse).toLowerCase()));
     return matchSearch && matchFilter && matchKlasse;
   });
+
+  // v40: Anzahl inaktiver Schüler (für Filter-Badge)
+  const inaktivCount = useMemo(
+    () => mockSchueler.filter(s => s.aktiv === false).length,
+    [refreshKey, localKey, mockSchueler.length]
+  );
 
   // Helfer für Checkbox-Logik
   const toggleSelect = (code) => {
@@ -2998,7 +3027,8 @@ function SchuelerView({ refreshKey, reload }) {
   };
   const toggleSelectAllVisible = () => {
     setSelectedCodes(prev => {
-      const visibleCodes = gefiltert.map(s => s.code);
+      // v40: inaktive Schüler sind nicht auswählbar (keine Bulk-Aktionen)
+      const visibleCodes = gefiltert.filter(s => s.aktiv !== false).map(s => s.code);
       const allSelected = visibleCodes.length > 0 && visibleCodes.every(c => prev.has(c));
       const next = new Set(prev);
       if (allSelected) visibleCodes.forEach(c => next.delete(c));
@@ -3007,8 +3037,9 @@ function SchuelerView({ refreshKey, reload }) {
     });
   };
   const clearSelection = () => setSelectedCodes(new Set());
-  const allVisibleSelected = gefiltert.length > 0 && gefiltert.every(s => selectedCodes.has(s.code));
-  const someVisibleSelected = gefiltert.some(s => selectedCodes.has(s.code)) && !allVisibleSelected;
+  const selectableVisible = gefiltert.filter(s => s.aktiv !== false);
+  const allVisibleSelected = selectableVisible.length > 0 && selectableVisible.every(s => selectedCodes.has(s.code));
+  const someVisibleSelected = selectableVisible.some(s => selectedCodes.has(s.code)) && !allVisibleSelected;
 
   // ---- v38: Bulk-Zuordnung (Vorab-Zuordnung) ----------------------------
   // Nach Mutation: Demo re-rendert via localKey, Produktiv lädt via reload() neu.
@@ -3058,6 +3089,47 @@ function SchuelerView({ refreshKey, reload }) {
       }
       showToast(`↩️ ${r.aufgehoben} Zuordnung(en) aufgehoben`, 'success');
       clearSelection();
+      afterMutation();
+    } catch (e) {
+      showToast('Fehler: ' + (e && e.message || e), 'error');
+    } finally {
+      setAssignBusy(false);
+    }
+  };
+
+  // v40: Schüler inaktiv setzen / reaktivieren.
+  // Inaktiv = von Wahl + Verlosung ausgeschlossen. Beim Inaktiv-Setzen werden
+  // Wahl & Zuteilung gelöscht (sauberer Schnitt) — daher Bestätigung mit Warnung.
+  const doToggleAktiv = async (s) => {
+    if (assignBusy) return;
+    const istAktiv = (s.aktiv !== false);
+    if (istAktiv) {
+      const hatDaten = s.hat_gewaehlt || s.zuteilung;
+      const warnung = hatDaten
+        ? '\n\n⚠️ ' + (s.zuteilung ? 'Die vorhandene Zuteilung' : 'Die vorhandene Anmeldung') + ' wird dabei gelöscht.'
+        : '';
+      if (!window.confirm(
+        `${s.vorname} ${s.nachname} (${s.klasse.toUpperCase()}) inaktiv setzen?\n\n` +
+        `Der Schüler kann sich dann nicht mehr anmelden und wird bei der Verlosung ignoriert.` +
+        warnung
+      )) return;
+    }
+    setAssignBusy(true);
+    try {
+      const r = await service.setSchuelerAktiv({ code: s.code, aktiv: !istAktiv });
+      if (!r || r.success === false) {
+        showToast('Fehlgeschlagen: ' + ((r && r.error) || 'unbekannt'), 'error');
+        return;
+      }
+      if (istAktiv) {
+        const g = r.geloescht;
+        let msg = `🚫 ${s.vorname} ${s.nachname} ist jetzt inaktiv`;
+        if (g && (g.wahlen || g.zuteilungen)) msg += ` — Wahl/Zuteilung entfernt`;
+        showToast(msg, 'success');
+      } else {
+        showToast(`✓ ${s.vorname} ${s.nachname} ist wieder aktiv`, 'success');
+      }
+      setSelectedCodes(prev => { const n = new Set(prev); n.delete(s.code); return n; });
       afterMutation();
     } catch (e) {
       showToast('Fehler: ' + (e && e.message || e), 'error');
@@ -3435,6 +3507,7 @@ S002;Erika;Musterfrau;7b;7</pre>
             <option value="alle">Alle anzeigen</option>
             <option value="angemeldet">Nur angemeldete</option>
             <option value="fehlt">Noch nicht angemeldet</option>
+            <option value="inaktiv">🚫 Nur inaktive${inaktivCount ? ` (${inaktivCount})` : ''}</option>
           </select>
         </div>
         <div class="input-group" style="margin:0;">
@@ -3552,28 +3625,38 @@ S002;Erika;Musterfrau;7b;7</pre>
                 <div class="empty-hint">${search || filter !== 'alle' || klasseAktiv ? 'Passe Suche oder Filter an, oder importiere Schüler via CSV-Import.' : 'Noch keine Schüler angelegt. Nutze den CSV-Import in der Setup-Phase.'}</div>
               </div>
             </td></tr>
-          ` : gefiltert.map(s => html`
-            <tr key=${s.code}>
+          ` : gefiltert.map(s => {
+            const istInaktiv = s.aktiv === false;
+            return html`
+            <tr key=${s.code} style=${istInaktiv ? 'opacity:.55;background:var(--bg-subtle, #f1f5f9);' : ''}>
               <td style="text-align:center;">
-                <input
+                ${istInaktiv ? '' : html`<input
                   type="checkbox"
                   aria-label=${`${s.vorname} ${s.nachname} auswählen`}
                   checked=${selectedCodes.has(s.code)}
                   onChange=${() => toggleSelect(s.code)}
-                />
+                />`}
               </td>
               <td style="font-family:monospace;">${s.code}</td>
               <td>${s.vorname} ${s.nachname}</td>
               <td>${s.klasse}</td>
-              <td>${s.fixiert && s.zuteilung
+              <td>${istInaktiv
+                ? html`<span class="pill pill-warning" style="background:#e5e7eb;color:#4b5563;" title="Nimmt nicht an der Projektwahl teil — kann sich nicht anmelden, Verlosung ignoriert diesen Schüler">🚫 inaktiv</span>`
+                : s.fixiert && s.zuteilung
                 ? html`<span class="pill pill-info" title="Vorab fest zugeordnet — muss nicht wählen, Verlosung überspringt diesen Schüler">📌 zugeordnet</span>`
                 : s.hat_gewaehlt ? html`<span class="pill pill-success">✓ angemeldet</span>` : html`<span class="pill pill-warning">⏳ fehlt</span>`}</td>
-              <td>${resolveProjektTitel(s.zuteilung) || s.zuteilung || '—'}</td>
+              <td>${istInaktiv ? '—' : (resolveProjektTitel(s.zuteilung) || s.zuteilung || '—')}</td>
               <td class="actions-cell">
-                <button class="btn btn-ghost btn-small" onClick=${() => printSerienbriefe('override', [s])} title=${`Nur Brief für ${s.vorname} ${s.nachname} drucken`}>🖨️ Brief</button>
+                ${istInaktiv
+                  ? html`<button class="btn btn-success btn-small" data-testid="reaktivieren" onClick=${() => doToggleAktiv(s)} disabled=${assignBusy} title=${`${s.vorname} ${s.nachname} wieder zur Projektwahl zulassen`}>✓ Reaktivieren</button>`
+                  : html`
+                    <button class="btn btn-ghost btn-small" onClick=${() => printSerienbriefe('override', [s])} title=${`Nur Brief für ${s.vorname} ${s.nachname} drucken`}>🖨️ Brief</button>
+                    <button class="btn btn-ghost btn-small" data-testid="inaktiv-setzen" onClick=${() => doToggleAktiv(s)} disabled=${assignBusy} title=${`${s.vorname} ${s.nachname} von der Projektwahl ausschließen`}>🚫 Inaktiv</button>
+                  `}
               </td>
             </tr>
-          `)}
+          `;
+          })}
         </tbody>
       </table>
     </div>

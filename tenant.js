@@ -36,11 +36,11 @@
       projektwoche_jahr: 2026,
       projekttage_von: '2026-07-21',
       projekttage_bis: '2026-07-23',
-      schulfest: '2026-07-23'
+      schulfest: '2026-07-24'
     },
     kontakt: {
-      verantwortlich_name: 'Lehrkraft 22',
-      verantwortlich_email: 'lehrkraft22@example.de'
+      verantwortlich_name: 'Norbert Kotzan',
+      verantwortlich_email: 'kotzan@realschule-schriesheim.de'
     },
     links: {
       datenschutz: 'https://realschule-schriesheim.de/datenschutzerklaerung/',

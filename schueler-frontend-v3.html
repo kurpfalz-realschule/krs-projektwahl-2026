@@ -443,6 +443,7 @@ footer a:hover{text-decoration:underline}
         const src = window.MOCK_SCHUELER || {};
         const s = src[cleanCode];
         if (!s) return { success: false, error: 'code_unbekannt' };
+        if (s.aktiv === false) return { success: false, error: 'schueler_inaktiv' };
         const phase = window.MOCK_PHASE || 'anmeldung';
         const out = {
           success: true, phase,
@@ -924,7 +925,11 @@ function App() {
     try {
       const res = await service.getSchuelerStatus(cleanCode);
       if (!res || !res.success) {
-        setCodeError('Dieser Code ist nicht bekannt. Bitte prüfe deinen Brief.');
+        if (res && res.error === 'schueler_inaktiv') {
+          setCodeError('Du nimmst aktuell nicht an der Projektwahl teil. Bitte wende dich an deine Klassenlehrerin oder deinen Klassenlehrer.');
+        } else {
+          setCodeError('Dieser Code ist nicht bekannt. Bitte prüfe deinen Brief.');
+        }
         return;
       }
       const s = {

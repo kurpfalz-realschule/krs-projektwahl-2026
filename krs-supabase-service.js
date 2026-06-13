@@ -327,6 +327,24 @@
       return data || [];
     }
 
+    // v40: Schüler aktiv/inaktiv schalten. Inaktiv = von Wahl + Verlosung
+    // ausgeschlossen; vorhandene Wahl/Zuteilung werden serverseitig gelöscht.
+    async setSchuelerAktiv({ code, aktiv }) {
+      const cleanCode = String(code || '').toUpperCase().trim();
+      if (!cleanCode) return { success: false, error: 'code_fehlt' };
+      if (this.isDemo) {
+        const list = (typeof window !== 'undefined' && window.mockSchueler) || [];
+        const s = list.find(x => String(x.code || '').toUpperCase() === cleanCode);
+        if (!s) return { success: false, error: 'schueler_unbekannt' };
+        s.aktiv = !!aktiv;
+        if (!aktiv) { s.hat_gewaehlt = false; s.zuteilung = null; s.fixiert = false; }
+        return { success: true, code: cleanCode, aktiv: !!aktiv };
+      }
+      const { data, error } = await this.client.rpc('set_schueler_aktiv', { p_code: cleanCode, p_aktiv: !!aktiv });
+      if (error) throw new Error('setSchuelerAktiv: ' + error.message);
+      return data || { success: false, error: 'keine_antwort' };
+    }
+
     // Schüler-Status inkl. Wahlen, Zuteilung, Tauschwunsch — RPC kapselt alles in einem Call
     async getSchuelerStatus(code) {
       const cleanCode = String(code || '').toUpperCase().trim();
@@ -336,6 +354,7 @@
         const src = window.MOCK_SCHUELER || {};
         const s = src[cleanCode];
         if (!s) return { success: false, error: 'code_unbekannt' };
+        if (s.aktiv === false) return { success: false, error: 'schueler_inaktiv' };
         const phase = window.MOCK_PHASE || 'anmeldung';
         const out = {
           success: true,
