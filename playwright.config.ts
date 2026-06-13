@@ -24,9 +24,14 @@ export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: false,          // Mock-Arrays sind global — parallele Tests kollidieren
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  retries: process.env.CI ? 2 : 0,
   workers: 1,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
+
+  // Default-Expect-Timeout großzügiger: auf ausgelasteten CI-Runnern war das
+  // Standard-5s-Limit zu knapp und führte zu flakigen toBeVisible/toBeHidden-
+  // Fehlern in den Projekt-Modal-Tests. 15s gibt Preact genug Zeit zum Re-Render.
+  expect: { timeout: 15_000 },
 
   use: {
     baseURL: 'http://127.0.0.1:4173',
