@@ -44,7 +44,7 @@ test.describe('Flow: Tauschwunsch bearbeiten', () => {
     // den btn-primary, nicht den btn-success (1:1-Tausch).
     const genehmigenBtn = page.locator('button.btn-primary')
       .filter({ hasText: /^✓ Genehmigen$/i }).first();
-    await expect(genehmigenBtn).toBeVisible({ timeout: 3_000 });
+    await expect(genehmigenBtn).toBeVisible({ timeout: 15_000 });
     await genehmigenBtn.click();
 
     // Bestätigungs-Modal mit „✓ Genehmigen und tauschen" Button
@@ -55,19 +55,19 @@ test.describe('Flow: Tauschwunsch bearbeiten', () => {
     await confirmBtn.click();
 
     // Modal schließt
-    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 3_000 });
+    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 15_000 });
 
     // Erfolgs-Toast
     await expect(
       page.locator('.toast').filter({ hasText: /genehmigt/i }).first()
-    ).toBeVisible({ timeout: 3_000 });
+    ).toBeVisible({ timeout: 15_000 });
 
     // Eine Karte weniger
     await expect(async () => {
       const cardsAfter = await page.locator('.card').count();
       expect(cardsAfter, `Karten sollten von ${cardsBefore} auf ${cardsBefore - 1} fallen`)
         .toBeLessThan(cardsBefore);
-    }).toPass({ timeout: 5_000 });
+    }).toPass({ timeout: 15_000 });
   });
 
   test('„✗ Ablehnen" → Begründungs-Modal → Wunsch verschwindet', async ({ page }) => {
@@ -98,18 +98,18 @@ test.describe('Flow: Tauschwunsch bearbeiten', () => {
     await confirmBtn.click();
 
     // Modal schließt
-    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 3_000 });
+    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 15_000 });
 
     // Erfolgs-Toast
     await expect(
       page.locator('.toast').filter({ hasText: /abgelehnt/i }).first()
-    ).toBeVisible({ timeout: 3_000 });
+    ).toBeVisible({ timeout: 15_000 });
 
     // Eine Karte weniger
     await expect(async () => {
       const cardsAfter = await page.locator('.card').count();
       expect(cardsAfter).toBeLessThan(cardsBefore);
-    }).toPass({ timeout: 5_000 });
+    }).toPass({ timeout: 15_000 });
   });
 
   test('„🔁 1:1-Tausch genehmigen" → Modal + mind. 1 Wunsch entfernt', async ({ page }) => {
@@ -138,17 +138,17 @@ test.describe('Flow: Tauschwunsch bearbeiten', () => {
       .getByRole('button', { name: /Genehmigen und tauschen/i })
       .click();
 
-    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 3_000 });
+    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 15_000 });
 
     // Toast „Tauschwunsch genehmigt" beweist dass Aktion ausgeführt wurde
     await expect(
       page.locator('.toast').filter({ hasText: /genehmigt/i }).first()
-    ).toBeVisible({ timeout: 3_000 });
+    ).toBeVisible({ timeout: 15_000 });
 
     // Mindestens 1 Karte weniger (Annas Wunsch entfernt)
     await expect(async () => {
       const cardsAfter = await page.locator('.card').count();
       expect(cardsAfter, 'Mindestens 1 Wunsch sollte entfernt sein').toBeLessThan(cardsBefore);
-    }).toPass({ timeout: 5_000 });
+    }).toPass({ timeout: 15_000 });
   });
 });

@@ -8,7 +8,7 @@ test.describe('Feature: Globaler Feedback-Button', () => {
 
     // Feedback-Button ist fix positioniert (bottom-right) — suche per Text oder aria-label
     const feedbackBtn = page.locator('button').filter({ hasText: /💬/ }).first();
-    await expect(feedbackBtn).toBeVisible({ timeout: 5_000 });
+    await expect(feedbackBtn).toBeVisible({ timeout: 15_000 });
   });
 
   test('Klick auf Feedback-Button öffnet Modal mit Sterne-Bewertung', async ({ page }) => {

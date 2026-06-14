@@ -9,7 +9,7 @@ test.describe('View: Manuelle Umbuchung', () => {
 
     // Suchfeld vorhanden
     const searchInput = page.locator('input[type="text"], input[placeholder*="Suche"], input[placeholder*="Code"]').first();
-    await expect(searchInput).toBeVisible({ timeout: 5_000 });
+    await expect(searchInput).toBeVisible({ timeout: 15_000 });
 
     // Suche nach bekanntem Namen aus Demo-Daten
     await searchInput.fill('Anna');

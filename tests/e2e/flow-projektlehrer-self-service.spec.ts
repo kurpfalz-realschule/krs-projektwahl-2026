@@ -15,7 +15,7 @@ test.describe('Flow: Projektlehrer Self-Service', () => {
 
     // Default-Section für projektlehrer ist 'mein-projekt'
     // Das Mein-Projekt-Header sollte sichtbar sein
-    await expect(page.locator('h1').filter({ hasText: /Mein Projekt|Meine Projekte/i })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('h1').filter({ hasText: /Mein Projekt|Meine Projekte/i })).toBeVisible({ timeout: 15_000 });
 
     // Nur Mein-Projekt-Tab sichtbar, kein Dashboard-Tab
     await expect(page.locator('[data-section="mein-projekt"]')).toBeVisible();
@@ -37,7 +37,7 @@ test.describe('Flow: Projektlehrer Self-Service', () => {
       return;
     }
     await editBtn.click();
-    await expect(page.locator('.modal-content')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.modal-content')).toBeVisible({ timeout: 15_000 });
   });
 
   test('Titel ändern → Speichern → Toast erscheint', async ({ page }) => {

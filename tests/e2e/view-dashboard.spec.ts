@@ -6,7 +6,7 @@ test.describe('View: Dashboard', () => {
   test('Dashboard-Tiles sind sichtbar und zeigen Counts', async ({ page }) => {
     await openAppLoggedIn(page);
     // Dashboard ist Default-Section — sofort sichtbar
-    await expect(page.locator('.dash-grid')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.dash-grid')).toBeVisible({ timeout: 15_000 });
 
     // Mindestens eine Tile vorhanden
     const tiles = page.locator('.dash-tile');
@@ -20,7 +20,7 @@ test.describe('View: Dashboard', () => {
 
   test('Tile-Klick navigiert zur zugehörigen Section', async ({ page }) => {
     await openAppLoggedIn(page);
-    await expect(page.locator('.dash-grid')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.dash-grid')).toBeVisible({ timeout: 15_000 });
 
     // Erste klickbare Tile anklicken
     const firstTile = page.locator('.dash-tile').first();

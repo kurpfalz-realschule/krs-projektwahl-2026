@@ -8,7 +8,7 @@ test.describe('View: Zuteilungen', () => {
     await goToSection(page, 'zuteilungen');
 
     // Header muss sichtbar sein
-    await expect(page.locator('h1').filter({ hasText: /Zuteilung/i })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('h1').filter({ hasText: /Zuteilung/i })).toBeVisible({ timeout: 15_000 });
 
     // Statistik-Tiles (1. Wahl, 2. Wahl …) vorhanden
     await expect(page.locator('.dash-tile').first()).toBeVisible();

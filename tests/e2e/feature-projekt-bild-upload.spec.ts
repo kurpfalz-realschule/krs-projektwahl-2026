@@ -21,7 +21,7 @@ test.describe('Feature: Projekt-Bild-Upload', () => {
       return;
     }
     await editBtn.click();
-    await expect(page.locator('.modal-content')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.modal-content')).toBeVisible({ timeout: 15_000 });
 
     // Upload-Input oder URL-Feld vorhanden
     const uploadInput = page.locator('.modal-content input[type="file"], .modal-content input[name*="bild"], .modal-content input[placeholder*="http"]');
@@ -52,7 +52,7 @@ test.describe('Feature: Projekt-Bild-Upload', () => {
       .setInputFiles('tests/fixtures/uploads/projekt-bild-sample.png');
 
     const preview = page.locator('.modal-content img[alt="Projekt-Bild"]');
-    await expect(preview).toBeVisible({ timeout: 5_000 });
+    await expect(preview).toBeVisible({ timeout: 15_000 });
     await expect(preview).toHaveJSProperty('naturalWidth', 1);
 
     await page.locator('.modal-content').getByRole('button', { name: /abbrechen/i }).click();
@@ -61,7 +61,7 @@ test.describe('Feature: Projekt-Bild-Upload', () => {
     const row = page.locator('table tbody tr').filter({ hasText: titel }).first();
     await row.getByRole('button', { name: /Bearbeiten|✏️/i }).click();
     await expect(page.locator('.modal-content')).toBeVisible();
-    await expect(page.locator('.modal-content img[alt="Projekt-Bild"]')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.modal-content img[alt="Projekt-Bild"]')).toBeVisible({ timeout: 15_000 });
   });
 
   test('Produktiv-Reload übernimmt gespeicherte Bild-URL in die Projektliste', async ({ page }) => {

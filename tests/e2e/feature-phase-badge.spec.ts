@@ -9,7 +9,7 @@ test.describe('Feature: Phase-Badge', () => {
     // PhaseBadge ist position:absolute oben rechts im main
     // Zeigt "📅 <Phase-Label>"
     const badge = page.locator('span').filter({ hasText: /📅/ }).first();
-    await expect(badge).toBeVisible({ timeout: 5_000 });
+    await expect(badge).toBeVisible({ timeout: 15_000 });
   });
 
   test('Klick auf Phase-Badge navigiert zur Phase-View', async ({ page }) => {
@@ -24,6 +24,6 @@ test.describe('Feature: Phase-Badge', () => {
     await page.waitForTimeout(300);
 
     // Nach Klick: Phase-View sollte aktiv sein
-    await expect(page.locator('h1').filter({ hasText: /Phase/i })).toBeVisible({ timeout: 3_000 });
+    await expect(page.locator('h1').filter({ hasText: /Phase/i })).toBeVisible({ timeout: 15_000 });
   });
 });

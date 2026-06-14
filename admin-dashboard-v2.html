@@ -1660,7 +1660,7 @@ window.VerteilungsAlgorithmus = VerteilungsAlgorithmus;
 
 <script type="module">
 import { h, render } from 'https://esm.sh/preact@10.19.3';
-import { useState, useEffect, useMemo, useCallback } from 'https://esm.sh/preact@10.19.3/hooks';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'https://esm.sh/preact@10.19.3/hooks';
 import htm from 'https://esm.sh/htm@3.1.1';
 const html = htm.bind(h);
 
@@ -3667,6 +3667,14 @@ S002;Erika;Musterfrau;7b;7</pre>
 function ProjekteView({ setModal, refreshKey, loadAll }) {
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState(null);
+  // Stale-Closure-Fix: Das Modal (inkl. Speichern-Handler) wird im useEffect
+  // gebaut und per setModal() im State gehalten. Der Handler schließt damit über
+  // den formData-Stand zum BAU-Zeitpunkt. Bei schnellen Eingaben (Stepper, selects)
+  // kann der im DOM hängende Speichern-Klick ein veraltetes formData lesen →
+  // fälschlich "Titel und Lehrer sind erforderlich", obwohl die Felder sichtbar
+  // gefüllt sind. Eine Ref hält immer den AKTUELLEN Stand; der Handler liest daraus.
+  const formDataRef = useRef(null);
+  formDataRef.current = formData;
   // v27: localKey erzwingt useMemo-Neuberechnung nach Demo-Mode-Mutationen
   const [localKey, setLocalKey] = useState(0);
   const projekte = useMemo(() => [...mockProjekteData], [refreshKey, localKey]);
@@ -3897,7 +3905,8 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
               }}>Löschen</button>
             `}
             <button class="btn btn-success" onClick=${async () => {
-              const cleanedForm = { ...(formData || {}) };
+              // Immer den aktuellen Stand aus der Ref lesen (siehe Stale-Closure-Fix oben).
+              const cleanedForm = { ...(formDataRef.current || formData || {}) };
               if (cleanedForm.lehrer2_id && cleanedForm.lehrer2_id === cleanedForm.lehrer_id) cleanedForm.lehrer2_id = '';
               const minTeilnehmer = parseIntOr(cleanedForm.min_teilnehmer, 0);
               const maxPlaetze = parseIntOr(cleanedForm.max_plaetze, 0);

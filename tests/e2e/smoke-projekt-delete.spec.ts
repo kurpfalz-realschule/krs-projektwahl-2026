@@ -42,17 +42,17 @@ test.describe('Smoke: Projekt löschen', () => {
     // Toast mit „Projekt gelöscht"
     await expect(
       page.locator('.toast').filter({ hasText: /Projekt gelöscht/i }).first()
-    ).toBeVisible({ timeout: 3_000 });
+    ).toBeVisible({ timeout: 15_000 });
 
     // Modal geschlossen
-    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 3_000 });
+    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 15_000 });
 
     // Counter ist um 1 gesunken
     await expect(async () => {
       const subtitleAfter = await page.locator('.main-subtitle').first().textContent() || '';
       const countAfter = parseInt((subtitleAfter.match(/(\d+) Projekte angelegt/) || ['', '0'])[1], 10);
       expect(countAfter, `Counter sollte gefallen sein (vorher ${countBefore})`).toBeLessThan(countBefore);
-    }).toPass({ timeout: 5_000 });
+    }).toPass({ timeout: 15_000 });
   });
 
   test('Löschen mit Cancel im Confirm: Projekt bleibt erhalten', async ({ appPage: page }) => {

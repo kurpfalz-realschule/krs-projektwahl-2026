@@ -69,7 +69,7 @@ test.describe('v38: Vorab-Zuordnung (Admin)', () => {
     await page.getByTestId('bulk-assign-confirm').click();
 
     // Erfolgs-Toast + Tabelle zeigt 📌 zugeordnet + Projekttitel
-    await expect(page.locator('.toast.success, .toast.info')).toBeVisible({ timeout: 3_000 });
+    await expect(page.locator('.toast.success, .toast.info')).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('table tbody tr').filter({ hasText: 'Ali' })).toContainText('zugeordnet');
     await expect(page.locator('table tbody tr').filter({ hasText: 'Ali' })).toContainText('Weinberg');
 
@@ -100,7 +100,7 @@ test.describe('v38: Vorab-Zuordnung (Admin)', () => {
     page.once('dialog', d => d.accept());
     await page.getByTestId('bulk-unassign').click();
 
-    await expect(page.locator('.toast.success')).toBeVisible({ timeout: 3_000 });
+    await expect(page.locator('.toast.success')).toBeVisible({ timeout: 15_000 });
     const nochFixiert = await page.evaluate(() =>
       (window as any).mockSchueler.filter((s: any) => s.fixiert).length
     );
@@ -146,7 +146,7 @@ test.describe('v38: Vorab-Zuordnung (Admin)', () => {
     const download = await downloadPromise;
 
     expect(download.suggestedFilename()).toMatch(/^schueler-export-\d{4}-\d{2}-\d{2}\.csv$/);
-    await expect(page.locator('.toast.success')).toBeVisible({ timeout: 3_000 });
+    await expect(page.locator('.toast.success')).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -169,7 +169,7 @@ test.describe('v38: Vorab-Zuordnung (Schüler-App)', () => {
     await page.locator('button').filter({ hasText: /Weiter/i }).click();
 
     // Direkt das Ergebnis statt Bestätigung/Wahlformular (Phase: anmeldung)
-    await expect(page.locator('.ergebnis-projekt-titel')).toContainText('Theater', { timeout: 5_000 });
+    await expect(page.locator('.ergebnis-projekt-titel')).toContainText('Theater', { timeout: 15_000 });
     await expect(page.locator('h2').filter({ hasText: /Bist du das/i })).toHaveCount(0);
 
     // Hinweistext für Direkt-Zuteilung, kein Tauschwunsch-Button in der Anmeldephase

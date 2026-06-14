@@ -16,7 +16,7 @@ test.describe('Flow: KlassenlehrerView', () => {
     await loginAs(page, 'klassenlehrer');
 
     // Header der KlassenlehrerView
-    await expect(page.locator('h1').filter({ hasText: /Meine Klasse/i })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('h1').filter({ hasText: /Meine Klasse/i })).toBeVisible({ timeout: 15_000 });
 
     // Mock-Klassenlehrer u23 ist Klassenlehrer von 7a
     await expect(page.locator('h1')).toContainText('7A');

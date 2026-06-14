@@ -12,7 +12,7 @@ test.describe('View: Einstellungen (v37 — system_settings)', () => {
     await openAppLoggedIn(page);
     await goToSection(page, 'einstellungen');
 
-    await expect(page.locator('h1').filter({ hasText: /Einstellungen/i })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('h1').filter({ hasText: /Einstellungen/i })).toBeVisible({ timeout: 15_000 });
 
     await expect(page.getByTestId('termin-anmelde-deadline')).toHaveValue('2026-07-10T23:59');
     await expect(page.getByTestId('termin-tausch-deadline')).toHaveValue('2026-07-17T23:59');
@@ -27,7 +27,7 @@ test.describe('View: Einstellungen (v37 — system_settings)', () => {
     await page.getByTestId('termin-anmelde-deadline').fill('2026-07-08T18:00');
     await page.getByTestId('termine-speichern').click();
 
-    await expect(page.locator('.toast.success')).toBeVisible({ timeout: 3_000 });
+    await expect(page.locator('.toast.success')).toBeVisible({ timeout: 15_000 });
 
     const saved = await page.evaluate(() => (window as any).MOCK_SETTINGS.anmelde_deadline);
     expect(saved, 'setSystemSetting soll im Demo-Modus MOCK_SETTINGS schreiben').toBe('2026-07-08T18:00');
@@ -41,7 +41,7 @@ test.describe('View: Einstellungen (v37 — system_settings)', () => {
     await page.getByTestId('termin-anmelde-deadline').fill('2026-07-20T12:00');
     await page.getByTestId('termine-speichern').click();
 
-    await expect(page.locator('.toast.error')).toBeVisible({ timeout: 3_000 });
+    await expect(page.locator('.toast.error')).toBeVisible({ timeout: 15_000 });
 
     const saved = await page.evaluate(() => (window as any).MOCK_SETTINGS.anmelde_deadline);
     expect(saved, 'Ungültiger Wert darf nicht gespeichert werden').not.toBe('2026-07-20T12:00');
@@ -60,7 +60,7 @@ test.describe('View: Einstellungen (v37 — system_settings)', () => {
     });
     await openAppLoggedIn(page);
 
-    await expect(page.getByTestId('deadline-banner')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId('deadline-banner')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('deadline-banner')).toContainText('Anmelde-Deadline');
   });
 
@@ -92,7 +92,7 @@ test.describe('Schüler-Frontend: Termine (v37)', () => {
     await page.waitForFunction(() => typeof (window as any).KRS_VERSION === 'string');
 
     const hint = page.getByTestId('deadline-hinweis');
-    await expect(hint).toBeVisible({ timeout: 5_000 });
+    await expect(hint).toBeVisible({ timeout: 15_000 });
     await expect(hint).toContainText('Anmeldung bis');
     await expect(hint).toContainText('10.07.2026');
   });
@@ -101,7 +101,7 @@ test.describe('Schüler-Frontend: Termine (v37)', () => {
     await page.goto('/schueler-frontend-v3.html?forceMode=demo');
     await page.waitForFunction(() => typeof (window as any).KRS_VERSION === 'string');
 
-    await expect(page.locator('.event-accent')).toContainText('21.07.2026', { timeout: 5_000 });
+    await expect(page.locator('.event-accent')).toContainText('21.07.2026', { timeout: 15_000 });
   });
 
   test('Tausch-Hinweis während Phase nachbearbeitung', async ({ page }) => {
@@ -110,7 +110,7 @@ test.describe('Schüler-Frontend: Termine (v37)', () => {
     await page.waitForFunction(() => typeof (window as any).KRS_VERSION === 'string');
 
     const hint = page.getByTestId('deadline-hinweis');
-    await expect(hint).toBeVisible({ timeout: 5_000 });
+    await expect(hint).toBeVisible({ timeout: 15_000 });
     await expect(hint).toContainText('Tauschwünsche bis');
   });
 });

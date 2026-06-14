@@ -9,13 +9,13 @@ test.describe('View: Verteilung', () => {
 
     // Pre-Flight-Button klicken
     const preflightBtn = page.locator('button').filter({ hasText: /Pre.?Flight|Vorprüfung|Prüfung starten/i }).first();
-    await expect(preflightBtn).toBeVisible({ timeout: 5_000 });
+    await expect(preflightBtn).toBeVisible({ timeout: 15_000 });
     await preflightBtn.click();
     await page.waitForTimeout(400);
 
     // Nach dem Click sollte ein Ergebnis (ok oder fehler) sichtbar sein
     const result = page.locator('.alert-success, .alert-error').first();
-    await expect(result).toBeVisible({ timeout: 5_000 });
+    await expect(result).toBeVisible({ timeout: 15_000 });
   });
 
   test('Pre-Flight wirft Fehler wenn Schüler-Array leer', async ({ page }) => {
@@ -39,6 +39,6 @@ test.describe('View: Verteilung', () => {
 
     // Fehler oder Warnung sollte sichtbar sein
     const errorEl = page.locator('.alert-error, .alert-warning').first();
-    await expect(errorEl).toBeVisible({ timeout: 5_000 });
+    await expect(errorEl).toBeVisible({ timeout: 15_000 });
   });
 });

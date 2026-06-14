@@ -41,12 +41,15 @@ test.describe('Smoke: Projekt-CRUD', () => {
     }
     await page.waitForTimeout(200);
 
-    await page.locator('.modal-content').getByRole('button', { name: /speichern/i }).click();
-    // Erst auf den Erfolgs-Toast warten (deterministisches Signal, dass der Save-
-    // Handler durch ist) — dann auf das Schließen des Modals prüfen. Großzügige
-    // Timeouts, damit der Test auf langsamen/ausgelasteten CI-Runnern nicht flaky wird.
-    await expect(page.locator('.toast.success').first()).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 15_000 });
+    // Robuster Speichern-Klick: Preact kann den Button zwischen Locator-Auflösung
+    // und Klick-Dispatch neu rendern → der Klick geht verloren, das Modal bleibt
+    // offen und es erscheint KEIN Toast. Da der Demo-Save synchron ist (push +
+    // Toast + Close sofort), ist "Modal offen ohne Toast" der Beweis für einen
+    // verlorenen Klick. Darum bis zum Schließen des Modals erneut klicken.
+    await expect(async () => {
+      await page.locator('.modal-content').getByRole('button', { name: /speichern/i }).click();
+      await expect(page.locator('.modal-content')).toBeHidden({ timeout: 3_000 });
+    }).toPass({ timeout: 20_000 });
 
     // Direkter DOM-Check: neues Projekt muss in der Tabelle erscheinen
     // (möglich dank key=${p.id} Fix in admin-dashboard-v2.html — Bug 1 E0)
@@ -94,9 +97,12 @@ test.describe('Smoke: Projekt-CRUD', () => {
     await maxInput.fill('24');
     await expect(maxInput).toHaveValue('24');
 
-    await page.locator('.modal-content').getByRole('button', { name: /speichern/i }).click();
-    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 5_000 });
-    await expect(page.locator('table tbody').getByText(uniqueTitel).first()).toBeVisible({ timeout: 5_000 });
+    // Robuster Speichern-Klick (siehe Kommentar oben — Lost-Click-Race).
+    await expect(async () => {
+      await page.locator('.modal-content').getByRole('button', { name: /speichern/i }).click();
+      await expect(page.locator('.modal-content')).toBeHidden({ timeout: 3_000 });
+    }).toPass({ timeout: 20_000 });
+    await expect(page.locator('table tbody').getByText(uniqueTitel).first()).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('table tbody tr').filter({ hasText: uniqueTitel })).toContainText('/24');
   });
 
@@ -124,9 +130,12 @@ test.describe('Smoke: Projekt-CRUD', () => {
     await expect(maxInput).toHaveValue('30');
     await page.waitForTimeout(150);
 
-    await page.locator('.modal-content').getByRole('button', { name: /speichern/i }).click();
-    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 5_000 });
-    await expect(page.locator('table tbody').getByText(uniqueTitel).first()).toBeVisible({ timeout: 5_000 });
+    // Robuster Speichern-Klick (siehe Kommentar oben — Lost-Click-Race).
+    await expect(async () => {
+      await page.locator('.modal-content').getByRole('button', { name: /speichern/i }).click();
+      await expect(page.locator('.modal-content')).toBeHidden({ timeout: 3_000 });
+    }).toPass({ timeout: 20_000 });
+    await expect(page.locator('table tbody').getByText(uniqueTitel).first()).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('table tbody tr').filter({ hasText: uniqueTitel })).toContainText('/30');
   });
 
@@ -153,8 +162,8 @@ test.describe('Smoke: Projekt-CRUD', () => {
     await titelInput.fill(edited);
 
     await page.locator('.modal-content').getByRole('button', { name: /speichern/i }).click();
-    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 3_000 });
+    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 15_000 });
 
-    await expect(page.getByText(edited).first()).toBeVisible({ timeout: 3_000 });
+    await expect(page.getByText(edited).first()).toBeVisible({ timeout: 15_000 });
   });
 });

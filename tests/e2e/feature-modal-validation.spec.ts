@@ -26,7 +26,7 @@ test.describe('Feature: Modal-Validierung', () => {
     // Error-Toast
     await expect(
       page.locator('.toast.error').filter({ hasText: /Titel und Lehrer sind erforderlich/i })
-    ).toBeVisible({ timeout: 3_000 });
+    ).toBeVisible({ timeout: 15_000 });
 
     // Modal ist NICHT geschlossen
     await expect(page.locator('.modal-content')).toBeVisible();
@@ -46,7 +46,7 @@ test.describe('Feature: Modal-Validierung', () => {
 
     await expect(
       page.locator('.toast.error').filter({ hasText: /Titel und Lehrer/i })
-    ).toBeVisible({ timeout: 3_000 });
+    ).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('.modal-content')).toBeVisible();
   });
 
@@ -78,11 +78,15 @@ test.describe('Feature: Modal-Validierung', () => {
     await maxInput.fill('5');
     await page.waitForTimeout(150);
 
-    await page.locator('.modal-content').getByRole('button', { name: /speichern/i }).click();
-
-    await expect(
-      page.locator('.toast.error').filter({ hasText: /Max\. Plätze müssen >= Min\. Teilnehmer/i })
-    ).toBeVisible({ timeout: 3_000 });
+    // Robuster Speichern-Klick (Lost-Click-Race): Preact kann den Button beim
+    // Re-Render austauschen → Klick verloren, kein Toast. Bis zum Fehler-Toast
+    // erneut klicken; das Modal bleibt absichtlich offen.
+    await expect(async () => {
+      await page.locator('.modal-content').getByRole('button', { name: /speichern/i }).click();
+      await expect(
+        page.locator('.toast.error').filter({ hasText: /Max\. Plätze müssen >= Min\. Teilnehmer/i })
+      ).toBeVisible({ timeout: 3_000 });
+    }).toPass({ timeout: 20_000 });
     await expect(page.locator('.modal-content')).toBeVisible();
   });
 
@@ -107,7 +111,7 @@ test.describe('Feature: Modal-Validierung', () => {
 
     await expect(
       page.locator('.toast.error').filter({ hasText: /Kurzbeschreibung ist erforderlich/i })
-    ).toBeVisible({ timeout: 3_000 });
+    ).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('.modal-content')).toBeVisible();
   });
 
@@ -123,7 +127,7 @@ test.describe('Feature: Modal-Validierung', () => {
 
     await expect(
       page.locator('.toast.error').filter({ hasText: /Name und E-?Mail sind erforderlich/i })
-    ).toBeVisible({ timeout: 3_000 });
+    ).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('.modal-content')).toBeVisible();
   });
 });

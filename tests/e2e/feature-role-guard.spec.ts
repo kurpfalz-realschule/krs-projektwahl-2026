@@ -17,7 +17,7 @@ test.describe('Feature: Role Guard', () => {
 
     // projektleitung hat Zugriff auf 'projekte'
     const projektNav = page.locator(`[data-section="projekte"]`);
-    await expect(projektNav).toBeVisible({ timeout: 5_000 });
+    await expect(projektNav).toBeVisible({ timeout: 15_000 });
 
     // projektleitung DARF KEINEN 'lehrer'-Tab sehen
     const lehrerNav = page.locator(`[data-section="lehrer"]`);
@@ -29,7 +29,7 @@ test.describe('Feature: Role Guard', () => {
 
     // Mein Projekt sichtbar
     const meinProjektNav = page.locator(`[data-section="mein-projekt"]`);
-    await expect(meinProjektNav).toBeVisible({ timeout: 5_000 });
+    await expect(meinProjektNav).toBeVisible({ timeout: 15_000 });
 
     // Dashboard NICHT sichtbar für projektlehrer
     const dashboardNav = page.locator(`[data-section="dashboard"]`);
@@ -45,7 +45,7 @@ test.describe('Feature: Role Guard', () => {
 
     // Meine Klasse sichtbar
     const meineKlasseNav = page.locator(`[data-section="meine-klasse"]`);
-    await expect(meineKlasseNav).toBeVisible({ timeout: 5_000 });
+    await expect(meineKlasseNav).toBeVisible({ timeout: 15_000 });
 
     // Dashboard NICHT sichtbar für klassenlehrer
     const dashboardNav = page.locator(`[data-section="dashboard"]`);

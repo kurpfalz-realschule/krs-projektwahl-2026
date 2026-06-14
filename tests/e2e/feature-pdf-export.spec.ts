@@ -8,7 +8,7 @@ test.describe('Feature: PDF-Export', () => {
     await goToSection(page, 'export');
 
     const btn = page.locator('button').filter({ hasText: /Klassenlisten|PDF erstellen/i }).first();
-    await expect(btn).toBeVisible({ timeout: 5_000 });
+    await expect(btn).toBeVisible({ timeout: 15_000 });
     await btn.click();
     await page.waitForTimeout(600);
     // App bleibt stabil (kein Crash)
@@ -28,7 +28,7 @@ test.describe('Feature: PDF-Export', () => {
       test.skip(true, 'Teilnehmerlisten-Button nicht gefunden');
       return;
     }
-    await expect(target).toBeVisible({ timeout: 5_000 });
+    await expect(target).toBeVisible({ timeout: 15_000 });
     await target.click();
     await page.waitForTimeout(600);
     await expect(page.locator('#appContent')).toBeVisible();

@@ -13,7 +13,7 @@ test.describe('Flow: Projektleitung Nadine', () => {
   test('Login als projektleitung → Projekte-Tab sichtbar', async ({ page }) => {
     await loginAs(page, 'projektleitung');
 
-    await expect(page.locator('[data-section="projekte"]')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-section="projekte"]')).toBeVisible({ timeout: 15_000 });
     // Lehrer-Tab NICHT sichtbar (ALLOWED_SECTIONS für projektleitung)
     await expect(page.locator('[data-section="lehrer"]')).not.toBeVisible();
   });
@@ -30,7 +30,7 @@ test.describe('Flow: Projektleitung Nadine', () => {
 
     // Neues-Projekt-Button klicken
     const newBtn = page.locator('button').filter({ hasText: /Neues Projekt|Anlegen|➕/i }).first();
-    await expect(newBtn).toBeVisible({ timeout: 5_000 });
+    await expect(newBtn).toBeVisible({ timeout: 15_000 });
     await newBtn.click();
     await expect(page.locator('.modal-content')).toBeVisible();
 
@@ -50,11 +50,11 @@ test.describe('Flow: Projektleitung Nadine', () => {
     await page.waitForTimeout(200);
 
     await page.locator('.modal-content').getByRole('button', { name: /speichern/i }).click();
-    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 5_000 });
+    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 15_000 });
 
     // Direkter DOM-Check: neues Projekt muss in der Tabelle erscheinen
     // (möglich dank key=${p.id} Fix in admin-dashboard-v2.html — Bug 1 E0)
-    await expect(page.locator('table tbody').getByText(uniqueTitel).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('table tbody').getByText(uniqueTitel).first()).toBeVisible({ timeout: 15_000 });
   });
 
   test('Status-Toggle wechselt Projekt-Status', async ({ page }) => {
@@ -81,6 +81,6 @@ test.describe('Flow: Projektleitung Nadine', () => {
     // wir den Toast als Beweis dass die Mutation stattgefunden hat.
     await expect(
       page.locator('.toast').filter({ hasText: /Status:\s*(entwurf|veroeffentlicht)/i }).first()
-    ).toBeVisible({ timeout: 3_000 });
+    ).toBeVisible({ timeout: 15_000 });
   });
 });

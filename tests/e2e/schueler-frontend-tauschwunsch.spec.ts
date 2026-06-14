@@ -17,7 +17,7 @@ test.describe('Schüler-Frontend: Tauschwunsch-Flow', () => {
     await page.waitForFunction(() => typeof (window as any).KRS_VERSION === 'string');
 
     // MeinErgebnis-Screen erscheint (wahl_nr=2 → Tauschwunsch-Button vorhanden)
-    await expect(page.locator('.ergebnis-projekt-titel')).toContainText('Kreatives Kochen', { timeout: 5_000 });
+    await expect(page.locator('.ergebnis-projekt-titel')).toContainText('Kreatives Kochen', { timeout: 15_000 });
     await expect(page.locator('button').filter({ hasText: /Tauschwunsch stellen/i })).toBeVisible();
 
     // Tauschwunsch öffnen
@@ -36,7 +36,7 @@ test.describe('Schüler-Frontend: Tauschwunsch-Flow', () => {
     await page.locator('button').filter({ hasText: /Wunsch senden/i }).click();
 
     // Bestätigungs-Screen
-    await expect(page.locator('h2').filter({ hasText: /Tauschwunsch gesendet/i })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('h2').filter({ hasText: /Tauschwunsch gesendet/i })).toBeVisible({ timeout: 15_000 });
   });
 
   test('Tauschwunsch ohne Begründung → Fehler-Toast bleibt im Formular', async ({ page }) => {

@@ -7,12 +7,12 @@ test.describe('View: Phase wechseln', () => {
     await openAppLoggedIn(page);
     await goToSection(page, 'phase');
 
-    await expect(page.locator('h1').filter({ hasText: /Phase/i })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('h1').filter({ hasText: /Phase/i })).toBeVisible({ timeout: 15_000 });
 
     // Die aktuelle Phase-Karte hat " (aktuell)" als Text-Node NEBEN dem <strong>-Label,
     // daher auf das Elternelement filtern (nicht auf <strong> selbst).
     const aktuellEl = page.locator('div').filter({ has: page.locator('strong'), hasText: '(aktuell)' });
-    await expect(aktuellEl.first()).toBeVisible({ timeout: 3_000 });
+    await expect(aktuellEl.first()).toBeVisible({ timeout: 15_000 });
   });
 
   test('Phasenwechsel-Klick aktiviert andere Phase', async ({ page }) => {

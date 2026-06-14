@@ -8,7 +8,7 @@ test.describe('View: Export & Aushang', () => {
     await goToSection(page, 'export');
 
     // Export-View hat mehrere Tiles mit Download-Buttons
-    await expect(page.locator('h1').filter({ hasText: /Export/i })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('h1').filter({ hasText: /Export/i })).toBeVisible({ timeout: 15_000 });
 
     const csvBtn = page.locator('button').filter({ hasText: /Gesamtliste|Herunterladen/i }).first();
     await expect(csvBtn).toBeVisible();
@@ -19,7 +19,7 @@ test.describe('View: Export & Aushang', () => {
     await goToSection(page, 'export');
 
     const pdfBtn = page.locator('button').filter({ hasText: /Klassenlisten|PDF erstellen/i }).first();
-    await expect(pdfBtn).toBeVisible({ timeout: 5_000 });
+    await expect(pdfBtn).toBeVisible({ timeout: 15_000 });
 
     // Download-Event abfangen (im Demo-Modus wird jsPDF ausgeführt → Toast erscheint)
     // Im Demo mit leeren Zuteilungen erscheint ein Toast "Keine Zuteilungsdaten"

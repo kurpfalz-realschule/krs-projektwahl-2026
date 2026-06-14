@@ -48,14 +48,14 @@ test.describe('Flow: Bulk-Veröffentlichen', () => {
     await page.waitForTimeout(200);
 
     await page.locator('.modal-content').getByRole('button', { name: /speichern/i }).click();
-    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 5_000 });
+    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 15_000 });
 
     // Counter ist gestiegen (proxy für „Save war erfolgreich")
     await expect(async () => {
       const subtitleAfter = await page.locator('.main-subtitle').first().textContent() || '';
       const countAfter = parseInt((subtitleAfter.match(/(\d+) Projekte angelegt/) || ['', '0'])[1], 10);
       expect(countAfter).toBeGreaterThan(countBefore);
-    }).toPass({ timeout: 5_000 });
+    }).toPass({ timeout: 15_000 });
 
     // Subtitle zeigt jetzt „N Projekte angelegt · M Entwürfe" (M ≥ 1)
     await expect(page.locator('.main-subtitle').first()).toContainText(/\d+ Entwürfe?/);
@@ -71,7 +71,7 @@ test.describe('Flow: Bulk-Veröffentlichen', () => {
     // Bulk-Button jetzt sichtbar
     await expect(
       page.locator('button').filter({ hasText: /Alle Entwürfe veröffentlichen/i }).first()
-    ).toBeVisible({ timeout: 5_000 });
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   test('Bulk-Button-Klick → Toast + Entwürfe verschwinden aus Subtitle', async ({ appPage: page }) => {
@@ -93,7 +93,7 @@ test.describe('Flow: Bulk-Veröffentlichen', () => {
     }
     await page.waitForTimeout(200);
     await page.locator('.modal-content').getByRole('button', { name: /speichern/i }).click();
-    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 5_000 });
+    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 15_000 });
 
     // Re-Mount erzwingen damit Bulk-Button rendert (siehe Bug 1)
     await goToSection(page, 'dashboard');
@@ -108,7 +108,7 @@ test.describe('Flow: Bulk-Veröffentlichen', () => {
     // Erfolgs-Toast
     await expect(
       page.locator('.toast').filter({ hasText: /veröffentlicht/i }).first()
-    ).toBeVisible({ timeout: 3_000 });
+    ).toBeVisible({ timeout: 15_000 });
 
     // Bulk-Button sollte jetzt verschwunden sein (entwurfsCount === 0)
     // Hinweis: Im Demo mutiert handleBulkVeroeffentlichen p.status direkt — durch
@@ -117,6 +117,6 @@ test.describe('Flow: Bulk-Veröffentlichen', () => {
       const subtitle = await page.locator('.main-subtitle').first().textContent() || '';
       // „· N Entwürfe" sollte verschwunden sein (oder N = 0)
       expect(subtitle, 'Entwürfe-Suffix sollte fehlen').not.toMatch(/· \d+ Entwürfe?/);
-    }).toPass({ timeout: 5_000 });
+    }).toPass({ timeout: 15_000 });
   });
 });

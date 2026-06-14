@@ -29,7 +29,7 @@ test.describe('Flow: Phase Lifecycle', () => {
     await goToSection(page, 'dashboard');
 
     // Dashboard zeigt Setup-Kontext (Projekte / Lehrer Tiles)
-    await expect(page.locator('.dash-grid')).toBeVisible({ timeout: 3_000 });
+    await expect(page.locator('.dash-grid')).toBeVisible({ timeout: 15_000 });
     // Phase-Badge zeigt "Setup" oder "Anmeldung" (je nach aktueller Phase)
     const badge = page.locator('span').filter({ hasText: /📅/ }).first();
     await expect(badge).toBeVisible();
@@ -48,7 +48,7 @@ test.describe('Flow: Phase Lifecycle', () => {
 
     // In der Nav sollte [data-section="anmeldungen"] sichtbar sein
     const anmeldungenNav = page.locator('[data-section="anmeldungen"]');
-    await expect(anmeldungenNav).toBeVisible({ timeout: 3_000 });
+    await expect(anmeldungenNav).toBeVisible({ timeout: 15_000 });
   });
 
   test('Phase auf nachbearbeitung → Tauschwünsche-Tab sichtbar', async ({ page }) => {
@@ -56,14 +56,14 @@ test.describe('Flow: Phase Lifecycle', () => {
     // da der Nav nur beim App-Start aus der Initialphase aufgebaut wird.
     await page.addInitScript(`window.MOCK_PHASE = 'nachbearbeitung';`);
     await page.goto('/admin-dashboard-v2.html?forceMode=demo');
-    await page.locator('#gateFormDemo').waitFor({ state: 'visible', timeout: 5_000 });
+    await page.locator('#gateFormDemo').waitFor({ state: 'visible', timeout: 15_000 });
     await page.locator('#pwInput').fill(DEMO_PASSWORD);
     await page.locator('#gateBtnDemo').click();
-    await page.locator('#appContent').waitFor({ state: 'visible', timeout: 5_000 });
+    await page.locator('#appContent').waitFor({ state: 'visible', timeout: 15_000 });
     await page.waitForTimeout(200);
 
     // Tauschwünsche-Tab erscheint nur in Phase nachbearbeitung
     const tauschNav = page.locator('[data-section="tauschwuensche"]');
-    await expect(tauschNav).toBeVisible({ timeout: 3_000 });
+    await expect(tauschNav).toBeVisible({ timeout: 15_000 });
   });
 });

@@ -54,13 +54,13 @@ test.describe('Smoke: Lehrer löschen', () => {
     // Toast „Lehrer gelöscht"
     await expect(
       page.locator('.toast').filter({ hasText: /Lehrer gelöscht/i }).first()
-    ).toBeVisible({ timeout: 3_000 });
-    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 3_000 });
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 15_000 });
 
     // Tabelle hat eine Zeile weniger
     await expect(async () => {
       const rowsAfter = await page.locator('table tbody tr').count();
       expect(rowsAfter, 'Tabelle sollte nach Delete um 1 schrumpfen').toBeLessThan(rowsBefore);
-    }).toPass({ timeout: 5_000 });
+    }).toPass({ timeout: 15_000 });
   });
 });

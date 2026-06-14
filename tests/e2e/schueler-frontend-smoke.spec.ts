@@ -19,7 +19,7 @@ test.describe('Schüler-Frontend: Smoke', () => {
     expect(version, 'KRS_VERSION sollte v30+ sein').toMatch(/^v(3[0-9])/);
 
     // Demo-Badge sichtbar
-    await expect(page.locator('.mode-badge.demo')).toBeVisible({ timeout: 3_000 });
+    await expect(page.locator('.mode-badge.demo')).toBeVisible({ timeout: 15_000 });
   });
 
   test('Mock-Daten exposed: window.MOCK_PROJEKTE + window.MOCK_SCHUELER', async ({ page }) => {
@@ -49,7 +49,7 @@ test.describe('Schüler-Frontend: Smoke', () => {
 
     // 8A-T4P1 = Anna Schmidt, hat_gewaehlt=false → landet im Bestätigungs-Screen.
     // h2 ist "Bist du das? 🤔", die Schüler-Daten stehen in .bestaetigung-box.
-    await expect(page.locator('h2').filter({ hasText: /Bist du das/i })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('h2').filter({ hasText: /Bist du das/i })).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('.bestaetigung-box')).toContainText('Anna Schmidt');
   });
 

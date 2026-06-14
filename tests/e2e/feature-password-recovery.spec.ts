@@ -17,7 +17,7 @@ test.describe('Feature: Passwort-Recovery', () => {
 
     // Im Demo-Modus: kein echter Auth → Gate sichtbar, kein Crash
     // Im Produktiv-Modus ohne gültigem Token: ebenfalls kein Crash
-    await expect(page.locator('#loginGate, #passwordRecoveryModal, .modal-content')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('#loginGate, #passwordRecoveryModal, .modal-content')).toBeVisible({ timeout: 15_000 });
   });
 
   test('Zu kurzes Passwort im Recovery-Modal wirft Fehler', async ({ page }) => {

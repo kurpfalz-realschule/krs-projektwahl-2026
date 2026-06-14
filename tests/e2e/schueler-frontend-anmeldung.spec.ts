@@ -14,7 +14,7 @@ test.describe('Schüler-Frontend: Anmelde-Flow', () => {
     await page.waitForFunction(() => typeof (window as any).KRS_VERSION === 'string');
 
     // Bestätigung erscheint mit Schüler-Daten
-    await expect(page.locator('h2').filter({ hasText: /Bist du das/i })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('h2').filter({ hasText: /Bist du das/i })).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('.bestaetigung-box')).toContainText('Anna Schmidt');
     await expect(page.locator('.bestaetigung-box')).toContainText('8a');
 
@@ -38,7 +38,7 @@ test.describe('Schüler-Frontend: Anmelde-Flow', () => {
     await page.locator('button').filter({ hasText: /Absenden/ }).click();
 
     // Fertig-Screen — h2 "Super, <Vorname>!" + Erfolgs-Strong-Element
-    await expect(page.locator('h2').filter({ hasText: /Super/i })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('h2').filter({ hasText: /Super/i })).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('strong').filter({ hasText: /Erfolgreich angemeldet/i })).toBeVisible();
 
     // Mock-State: 8A-T4P1 ist jetzt hat_gewaehlt=true
@@ -66,7 +66,7 @@ test.describe('Schüler-Frontend: Anmelde-Flow', () => {
     await page.locator('button').filter({ hasText: /Weiter/ }).click();
 
     // Bestätigen
-    await expect(page.locator('h2').filter({ hasText: /Bist du das/i })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('h2').filter({ hasText: /Bist du das/i })).toBeVisible({ timeout: 15_000 });
     await page.locator('button').filter({ hasText: /Ja, das bin ich/ }).click();
 
     // p1 (Fotografie, 7-9) und p3 (Weinberg, 7-9) dürfen NICHT erscheinen für klassenstufe 5

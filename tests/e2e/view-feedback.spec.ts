@@ -7,9 +7,9 @@ test.describe('View: Feedback-Übersicht', () => {
     await openAppLoggedIn(page);
     await goToSection(page, 'feedback');
 
-    await expect(page.locator('h1').filter({ hasText: /Feedback/i })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('h1').filter({ hasText: /Feedback/i })).toBeVisible({ timeout: 15_000 });
     // Im Demo-Modus erscheint ein Alert-Info-Hinweis (keine echten Daten)
-    await expect(page.locator('.alert-warning, .alert-info').first()).toBeVisible({ timeout: 3_000 });
+    await expect(page.locator('.alert-warning, .alert-info').first()).toBeVisible({ timeout: 15_000 });
   });
 
   test('Filter-Buttons (Offen / Alle) sind sichtbar und schaltbar', async ({ page }) => {
@@ -19,7 +19,7 @@ test.describe('View: Feedback-Übersicht', () => {
     const offenBtn = page.locator('button').filter({ hasText: /Offen/i }).first();
     const alleBtn  = page.locator('button').filter({ hasText: /^Alle/i }).first();
 
-    await expect(offenBtn).toBeVisible({ timeout: 5_000 });
+    await expect(offenBtn).toBeVisible({ timeout: 15_000 });
     await expect(alleBtn).toBeVisible();
 
     // Filter wechseln

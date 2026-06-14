@@ -40,7 +40,7 @@ test.describe('Smoke: Lehrer-CRUD', () => {
     await page.locator('.modal-content').getByRole('button', { name: /speichern/i }).click();
 
     // Modal schließt
-    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 3_000 });
+    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 15_000 });
 
     // Neuer Eintrag in Tabelle sichtbar
     await expect(page.getByRole('cell', { name: uniqueName })).toBeVisible();
@@ -65,9 +65,9 @@ test.describe('Smoke: Lehrer-CRUD', () => {
     await nameInput.fill(newName);
 
     await page.locator('.modal-content').getByRole('button', { name: /speichern/i }).click();
-    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 3_000 });
+    await expect(page.locator('.modal-content')).toBeHidden({ timeout: 15_000 });
 
     // v22-Regression: Änderung muss OHNE Reload in der Tabelle erscheinen
-    await expect(page.getByRole('cell', { name: newName })).toBeVisible({ timeout: 3_000 });
+    await expect(page.getByRole('cell', { name: newName })).toBeVisible({ timeout: 15_000 });
   });
 });

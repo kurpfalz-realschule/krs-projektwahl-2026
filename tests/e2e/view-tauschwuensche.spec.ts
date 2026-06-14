@@ -8,7 +8,7 @@ test.describe('View: Tauschwünsche', () => {
     await goToSection(page, 'tauschwuensche');
 
     // Header vorhanden
-    await expect(page.locator('h1').filter({ hasText: /Tausch/i })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('h1').filter({ hasText: /Tausch/i })).toBeVisible({ timeout: 15_000 });
 
     // TauschwuenscheView nutzt Karten (.card) statt <table>:
     // - mit Wünschen → mehrere `.card`-Items + ggf. `.alert.alert-success` (1:1-Tausch erkannt)

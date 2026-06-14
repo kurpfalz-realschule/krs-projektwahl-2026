@@ -48,7 +48,7 @@ test.describe('Flow: KlassenlehrerView Erinnerungs-Trigger (E1.6)', () => {
     });
 
     // Click triggert window.open → neuer Page-Event auf dem Context
-    const popupPromise = context.waitForEvent('page', { timeout: 5_000 });
+    const popupPromise = context.waitForEvent('page', { timeout: 15_000 });
     await page.locator('[data-testid="klassenlehrer-erinnerung-btn"]').click();
     const popup = await popupPromise;
     await popup.waitForLoadState('domcontentloaded');

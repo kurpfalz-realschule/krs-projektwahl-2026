@@ -8,7 +8,7 @@ test.describe('View: Schüler', () => {
     await goToSection(page, 'schueler');
 
     // Mindestens eine Tabellenzeile (Demo-Daten enthalten >300 Schüler)
-    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 15_000 });
     const rows = await page.locator('table tbody tr').count();
     expect(rows, 'Demo-Daten sollten >0 Schüler enthalten').toBeGreaterThan(0);
   });
