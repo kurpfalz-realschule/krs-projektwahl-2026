@@ -3362,25 +3362,28 @@ function SchuelerView({ refreshKey, reload }) {
 <meta charset="UTF-8" />
 <title>Serienbriefe — Projektwoche ${escapeHtml(String(projektJahr))}</title>
 <style>
-  @page { size: A4; margin: 18mm 20mm; }
+  @page { size: A4; margin: 14mm 20mm; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: #fff; color: #111; font-family: Georgia, 'Times New Roman', serif; font-size: 12pt; line-height: 1.5; }
-  .brief { page-break-after: always; padding: 0; min-height: 100%; }
+  html, body { margin: 0; padding: 0; background: #fff; color: #111; font-family: Georgia, 'Times New Roman', serif; font-size: 11pt; line-height: 1.32; }
+  /* Ein Brief = genau eine A4-Seite. page-break-inside:avoid verhindert einen
+     Umbruch mitten im Brief; die gestrafften Vertikal-Abstände halten den
+     kompletten Inhalt (inkl. QR-Code) sicher auf einer Seite. */
+  .brief { page-break-after: always; page-break-inside: avoid; padding: 0; }
   .brief:last-child { page-break-after: auto; }
-  .brief-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32mm; border-bottom: 1px solid #ddd; padding-bottom: 6pt; }
+  .brief-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10mm; border-bottom: 1px solid #ddd; padding-bottom: 6pt; }
   .absender { font-size: 10pt; color: #333; }
   .datum { font-size: 10pt; color: #333; }
-  .adresse { margin-bottom: 14mm; font-size: 11pt; }
-  h2 { font-size: 16pt; margin: 0 0 6mm 0; }
-  p { margin: 0 0 10pt 0; }
-  ol { margin: 0 0 10pt 20pt; padding: 0; }
-  ol li { margin-bottom: 4pt; }
-  .code-box { margin: 8mm 0; padding: 6mm 8mm; border: 2px solid #111; border-radius: 4pt; text-align: center; background: #f7f7f7; }
-  .code-label { font-size: 10pt; text-transform: uppercase; letter-spacing: 0.1em; color: #555; margin-bottom: 3mm; }
-  .code-value { font-size: 28pt; font-weight: bold; letter-spacing: 0.12em; font-family: 'Courier New', Courier, monospace; }
-  .code-hint { font-size: 9pt; color: #666; margin-top: 3mm; }
-  .code-qr { margin-top: 4mm; }
-  .code-qr img { width: 28mm; height: 28mm; }
+  .adresse { margin-bottom: 7mm; font-size: 11pt; }
+  h2 { font-size: 15pt; margin: 0 0 3mm 0; }
+  p { margin: 0 0 6pt 0; }
+  ol { margin: 0 0 6pt 20pt; padding: 0; }
+  ol li { margin-bottom: 2pt; }
+  .code-box { margin: 4mm 0; padding: 4mm 8mm; border: 2px solid #111; border-radius: 4pt; text-align: center; background: #f7f7f7; }
+  .code-label { font-size: 10pt; text-transform: uppercase; letter-spacing: 0.1em; color: #555; margin-bottom: 2mm; }
+  .code-value { font-size: 23pt; font-weight: bold; letter-spacing: 0.12em; font-family: 'Courier New', Courier, monospace; }
+  .code-hint { font-size: 9pt; color: #666; margin-top: 2mm; }
+  .code-qr { margin-top: 3mm; }
+  .code-qr img { width: 22mm; height: 22mm; }
   .qr-hint { font-size: 9pt; color: #666; margin-top: 1mm; }
   .toolbar { position: sticky; top: 0; background: #1b1e25; color: #fff; padding: 10px 16px; display: flex; gap: 10px; align-items: center; }
   .toolbar button { background: #4cae4f; color: #fff; border: none; padding: 8px 16px; font-size: 14px; border-radius: 4px; cursor: pointer; font-family: inherit; }
@@ -3725,11 +3728,11 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
           <h2>${editingId === 'new' ? '➕ Neues Projekt' : '✏️ Projekt bearbeiten'}</h2>
           <div class="input-group">
             <label>Titel *</label>
-            <input type="text" value=${formData?.titel || ''} onInput=${e => setFormData({...formData, titel: e.target.value})} />
+            <input type="text" value=${formData?.titel || ''} onInput=${e => setFormData(prev => ({...(prev || formData), titel: e.target.value}))} />
           </div>
           <div class="input-group">
             <label>Kurzbeschreibung *</label>
-            <textarea maxlength="300" value=${formData?.kurzbeschreibung || ''} onInput=${e => setFormData({...formData, kurzbeschreibung: e.target.value})}></textarea>
+            <textarea maxlength="300" value=${formData?.kurzbeschreibung || ''} onInput=${e => setFormData(prev => ({...(prev || formData), kurzbeschreibung: e.target.value}))}></textarea>
           </div>
           <div class="form-row">
             <div class="input-group">
@@ -3769,7 +3772,7 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
           <div class="form-row">
             <div class="input-group">
               <label>Status</label>
-              <select value=${formData?.status || 'entwurf'} onChange=${e => setFormData({...formData, status: e.target.value})}>
+              <select value=${formData?.status || 'entwurf'} onChange=${e => setFormData(prev => ({...(prev || formData), status: e.target.value}))}>
                 <option value="entwurf">Entwurf</option>
                 <option value="veroeffentlicht">Veröffentlicht</option>
               </select>
@@ -3808,13 +3811,13 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
           <div class="form-row">
             <div class="input-group">
               <label>Min. Klassenstufe</label>
-              <select value=${formData?.min_klasse || 5} onChange=${e => setFormData({...formData, min_klasse: parseInt(e.target.value)})}>
+              <select value=${formData?.min_klasse || 5} onChange=${e => setFormData(prev => ({...(prev || formData), min_klasse: parseInt(e.target.value)}))}>
                 ${PROJECT_GRADE_OPTIONS.map(k => html`<option value=${k}>${k}</option>`)}
               </select>
             </div>
             <div class="input-group">
               <label>Max. Klassenstufe</label>
-              <select value=${formData?.max_klasse || 9} onChange=${e => setFormData({...formData, max_klasse: parseInt(e.target.value)})}>
+              <select value=${formData?.max_klasse || 9} onChange=${e => setFormData(prev => ({...(prev || formData), max_klasse: parseInt(e.target.value)}))}>
                 ${PROJECT_GRADE_OPTIONS.map(k => html`<option value=${k}>${k}</option>`)}
               </select>
             </div>
@@ -3844,7 +3847,7 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
                         showToast('Bild wird hochgeladen…', 'info');
                         const svc = new window.KrsDataService();
                         const { url } = await svc.uploadProjektBild(editingId, file);
-                        setFormData({...formData, bild_url: url});
+                        setFormData(prev => ({...(prev || formData), bild_url: url}));
                         if (typeof loadAll === 'function') await loadAll();
                         showToast('Bild hochgeladen ✓', 'success');
                       } catch (err) {
@@ -3864,7 +3867,7 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
                         try {
                           const svc = new window.KrsDataService();
                           await svc.deleteProjektBild(editingId);
-                          setFormData({...formData, bild_url: null});
+                          setFormData(prev => ({...(prev || formData), bild_url: null}));
                           if (typeof loadAll === 'function') await loadAll();
                           showToast('Bild entfernt', 'success');
                         } catch (err) {
@@ -4201,23 +4204,23 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
           <div class="input-group">
             <label>Titel *</label>
             <input type="text" value=${formData?.titel || ''}
-              onInput=${e => setFormData({...formData, titel: e.target.value})} />
+              onInput=${e => setFormData(prev => ({...(prev || formData), titel: e.target.value}))} />
           </div>
           <div class="input-group">
             <label>Kurzbeschreibung *</label>
             <textarea maxlength="300" value=${formData?.kurzbeschreibung || ''}
-              onInput=${e => setFormData({...formData, kurzbeschreibung: e.target.value})}></textarea>
+              onInput=${e => setFormData(prev => ({...(prev || formData), kurzbeschreibung: e.target.value}))}></textarea>
             <small style="color:#8B97A2;">max. 300 Zeichen — wird in der Schüler-Übersicht angezeigt.</small>
           </div>
           <div class="input-group">
             <label>Langbeschreibung (optional)</label>
             <textarea value=${formData?.langbeschreibung || ''}
-              onInput=${e => setFormData({...formData, langbeschreibung: e.target.value})}></textarea>
+              onInput=${e => setFormData(prev => ({...(prev || formData), langbeschreibung: e.target.value}))}></textarea>
           </div>
           <div class="input-group">
             <label>Ort (optional)</label>
             <input type="text" value=${formData?.ort || ''}
-              onInput=${e => setFormData({...formData, ort: e.target.value})} />
+              onInput=${e => setFormData(prev => ({...(prev || formData), ort: e.target.value}))} />
           </div>
           ${editingId !== 'new' && html`
             <div style="background:#F6F7F9;border-radius:6px;padding:10px 12px;margin-top:10px;font-size:0.85rem;color:#6C7A87;line-height:1.5;">
@@ -4253,7 +4256,7 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
                         showToast('Bild wird hochgeladen…', 'info');
                         const svc = new window.KrsDataService();
                         const { url } = await svc.uploadProjektBild(editingId, file);
-                        setFormData({...formData, bild_url: url});
+                        setFormData(prev => ({...(prev || formData), bild_url: url}));
                         if (typeof loadAll === 'function') await loadAll();
                         showToast('Bild hochgeladen ✓', 'success');
                       } catch (err) {
@@ -4273,7 +4276,7 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
                         try {
                           const svc = new window.KrsDataService();
                           await svc.deleteProjektBild(editingId);
-                          setFormData({...formData, bild_url: null});
+                          setFormData(prev => ({...(prev || formData), bild_url: null}));
                           if (typeof loadAll === 'function') await loadAll();
                           showToast('Bild entfernt', 'success');
                         } catch (err) {
@@ -4697,15 +4700,15 @@ function LehrerView({ setModal, refreshKey, loadAll }) {
           <h2>${editingId === 'new' ? '➕ Lehrer einladen' : '✏️ Lehrer bearbeiten'}</h2>
           <div class="input-group">
             <label>Name *</label>
-            <input type="text" value=${formData?.name || ''} onInput=${e => setFormData({...formData, name: e.target.value})} />
+            <input type="text" value=${formData?.name || ''} onInput=${e => setFormData(prev => ({...(prev || formData), name: e.target.value}))} />
           </div>
           <div class="input-group">
             <label>E-Mail *</label>
-            <input type="email" value=${formData?.email || ''} onInput=${e => setFormData({...formData, email: e.target.value})} />
+            <input type="email" value=${formData?.email || ''} onInput=${e => setFormData(prev => ({...(prev || formData), email: e.target.value}))} />
           </div>
           <div class="input-group">
             <label>Rolle</label>
-            <select value=${formData?.rolle || 'projektlehrer'} onChange=${e => setFormData({...formData, rolle: e.target.value})}>
+            <select value=${formData?.rolle || 'projektlehrer'} onChange=${e => setFormData(prev => ({...(prev || formData), rolle: e.target.value}))}>
               <option value="super_admin">Super-Admin</option>
               <option value="projektlehrer">Projektlehrer</option>
               <option value="klassenlehrer">Klassenlehrer</option>
@@ -4714,7 +4717,7 @@ function LehrerView({ setModal, refreshKey, loadAll }) {
           </div>
           <div class="input-group">
             <label>Klassenlehrer von (z.B. 7a)</label>
-            <input type="text" value=${formData?.klassenlehrer_von || ''} onInput=${e => setFormData({...formData, klassenlehrer_von: e.target.value})} placeholder="Optional" />
+            <input type="text" value=${formData?.klassenlehrer_von || ''} onInput=${e => setFormData(prev => ({...(prev || formData), klassenlehrer_von: e.target.value}))} placeholder="Optional" />
           </div>
           <div class="btn-group" style="margin-top:20px;">
             <button class="btn btn-ghost" onClick=${() => { setModal(null); setFormData(null); setEditingId(null); }}>Abbrechen</button>
