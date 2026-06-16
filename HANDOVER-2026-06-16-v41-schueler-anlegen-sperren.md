@@ -89,10 +89,15 @@ CI beobachten — bei grün deployt GitHub Pages v41 automatisch.
 - `tests/e2e/smoke-login.spec.ts:46` → jetzt `/^v(2[2-9]|[3-9][0-9])/`
 Alle 24 v41-Feature-Tests waren grün. `tests/fixtures/app.ts` war bereits korrekt. Keine weiteren Versions-Deckel im Test-Ordner.
 
-**C) Offener Schritt: Push.** Fix liegt als lokaler Commit `cb9c848` vor (2 Test-Specs + korrigierte Migration). Muss noch gepusht werden (Token bleibt bei Norbert):
+**C) v41 ist LIVE.** Commit `cb9c848` (Test-Regex + Migration-Korrektur) → CI #25 grün → deployt. v41 läuft live unter der Pages-URL.
+
+**D) Feature: aufklappbare Beschreibung in „📖 Alle Projekte" (Lehreransicht).** Commit `dc1732a`, gepusht, CI #26. Jede Projektzeile hat ein Chevron (▸/▾); Klick auf Chevron/Titel klappt Kurz- + Langbeschreibung auf (Akkordeon, mehrere gleichzeitig möglich, default zu). `langbeschreibung` wird jetzt im loadAll-Mapping mitgeladen. Dateien: `admin-dashboard-v2.html` (`AlleProjekteView`, loadAll-Mapping).
+
+**E) Deploy-Skript `deploy.sh` (NEU).** Robuster Ein-Befehl-Deploy, fängt alle heutigen Stolpersteine ab (verwaiste `.git/*.lock`, zsh-`read`, falscher/abgelaufener Token → fragt einmal nach + speichert im Schlüsselbund). Nutzung:
 ```bash
-cd "/Users/admin/Downloads/Codex playground/projekwoche app neu"
-rm -f .git/index.lock
-git push "https://DEIN-TOKEN@github.com/kurpfalz-realschule/krs-projektwahl-2026.git" main
+./deploy.sh "Commit-Nachricht"               # getrackte Änderungen committen + pushen
+./deploy.sh "Nachricht" neue-datei.sql       # zusätzlich neue Dateien mitnehmen
 ```
-Danach CI-Lauf #25 → bei grün deployt GitHub Pages v41 automatisch live.
+Nach erstem erfolgreichen Lauf merkt macOS den Token — künftige Deploys laufen ohne Nachfrage. Untracked Doku/Mails bleiben bewusst außen vor (`git add -u`).
+
+**Offen / nice-to-have:** E2E-Test für das Aufklappen (Chevron-Klick → Beschreibung sichtbar) ergänzen; HANDOVER-Doku selbst ist weiterhin untracked (bewusst).
