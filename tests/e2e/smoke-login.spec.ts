@@ -43,7 +43,7 @@ test.describe('Smoke: Login-Gate', () => {
     const version = await page.evaluate(() => (window as any).KRS_VERSION);
     const mode = await page.evaluate(() => (window as any).KRS_MODE);
     expect(mode).toBe('demo');
-    expect(version).toMatch(/^v(2[2-9]|3[0-9])/);
+    expect(version).toMatch(/^v(2[2-9]|[3-9][0-9])/);
   });
 
   test('Kein Console-Error beim App-Start', async ({ page }) => {

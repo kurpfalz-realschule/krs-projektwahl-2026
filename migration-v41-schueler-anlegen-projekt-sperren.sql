@@ -53,11 +53,15 @@ JOIN public.users u1 ON p.lehrer_id = u1.id
 LEFT JOIN public.users u2 ON p.lehrer2_id = u2.id
 WHERE p.status = 'veroeffentlicht';
 
--- WICHTIG: CREATE OR REPLACE VIEW ersetzt die reloptions vollständig und
--- verwirft dabei security_invoker (gesetzt in migration-views-security-invoker.sql).
--- Daher hier erneut explizit setzen, sonst läuft die View wieder mit Definer-
--- Rechten und umgeht RLS auf projekte/users.
-ALTER VIEW public.projekte_public SET (security_invoker = true);
+-- WICHTIG: CREATE OR REPLACE VIEW ersetzt die reloptions vollständig.
+-- In der Produktiv-DB läuft projekte_public bewusst mit DEFINER-Rechten
+-- (security_invoker = false), damit der öffentliche, anonyme Lesezugriff auf
+-- die veröffentlichten Projekte funktioniert (anon hat keine eigene RLS-
+-- Leseregel auf projekte/users). Daher hier explizit auf false halten —
+-- security_invoker = true würde die Schülerwahl-Anzeige für anon brechen
+-- (alle Projekte verschwinden). Optionale Härtung später nur zusammen mit
+-- passenden RLS-SELECT-Policies für anon.
+ALTER VIEW public.projekte_public SET (security_invoker = false);
 
 GRANT SELECT ON public.projekte_public TO anon, authenticated;
 

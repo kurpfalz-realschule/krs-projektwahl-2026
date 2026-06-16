@@ -16,7 +16,7 @@ test.describe('Schüler-Frontend: Smoke', () => {
     const mode = await page.evaluate(() => (window as any).KRS_MODE);
     const version = await page.evaluate(() => (window as any).KRS_VERSION);
     expect(mode, 'forceMode=demo sollte Demo-Modus erzwingen').toBe('demo');
-    expect(version, 'KRS_VERSION sollte v30+ sein').toMatch(/^v(3[0-9])/);
+    expect(version, 'KRS_VERSION sollte v30+ sein').toMatch(/^v([3-9][0-9])/);
 
     // Demo-Badge sichtbar
     await expect(page.locator('.mode-badge.demo')).toBeVisible({ timeout: 15_000 });
