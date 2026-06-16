@@ -257,6 +257,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
       min_klasse: row.min_klasse,
       max_klasse: row.max_klasse,
       bild_url: row.bild_url || null,
+      gesperrt: !!row.gesperrt,
     };
   }
 
@@ -272,6 +273,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
       max_klasse: row.max_klasse,
       freie_plaetze: row.freie_plaetze,
       bild_url: row.bild_url || null,
+      gesperrt: !!row.gesperrt,
     };
   }
 
@@ -544,6 +546,49 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
       }
       const { data, error } = await this.client.rpc('set_schueler_aktiv', { p_code: cleanCode, p_aktiv: !!aktiv });
       if (error) throw new Error('setSchuelerAktiv: ' + error.message);
+      return data || { success: false, error: 'keine_antwort' };
+    }
+    // v41: Einzelnen Schüler nachträglich anlegen (Name + Klasse).
+    // Demo: pusht in window.mockSchueler mit generiertem Code.
+    // Live: RPC admin_create_schueler (admin-guarded, erzeugt Code + klassenstufe).
+    async createSchueler({ vorname, nachname, klasse }) {
+      const vn = String(vorname || '').trim();
+      const nn = String(nachname || '').trim();
+      const kl = String(klasse || '').trim().toLowerCase();
+      if (!vn || !nn) return { success: false, error: 'name_fehlt' };
+      if (!/^(?:[5-9]|10)[a-z]$/.test(kl)) return { success: false, error: 'klasse_ungueltig' };
+      if (this.isDemo) {
+        const list = (window.mockSchueler ||= []);
+        const dup = list.some(s => String(s.vorname).toLowerCase() === vn.toLowerCase()
+          && String(s.nachname).toLowerCase() === nn.toLowerCase()
+          && String(s.klasse).toLowerCase() === kl);
+        const code = (typeof generateAnmeldeCode === 'function') ? generateAnmeldeCode(kl)
+          : (kl.toUpperCase() + '-' + Math.random().toString(36).slice(2, 6).toUpperCase());
+        const stufe = parseInt(String(kl).match(/^\d+/)?.[0] || '0', 10);
+        list.push({ code, vorname: vn, nachname: nn, klasse: kl, klassenstufe: stufe,
+          hat_gewaehlt: false, zuteilung: null, fixiert: false, aktiv: true });
+        try { window.dispatchEvent(new Event('krs:mock-seeded')); } catch (_) {}
+        return { success: true, code, vorname: vn, nachname: nn, klasse: kl, klassenstufe: stufe,
+          warnung: dup ? 'name_existiert_bereits' : null };
+      }
+      const { data, error } = await this.client.rpc('admin_create_schueler', {
+        p_vorname: vn, p_nachname: nn, p_klasse: kl });
+      if (error) throw new Error('createSchueler: ' + error.message);
+      return data || { success: false, error: 'keine_antwort' };
+    }
+    // v41: Projekt für weitere Schüler:innen sperren/entsperren.
+    async setProjektGesperrt({ id, gesperrt }) {
+      if (!id) return { success: false, error: 'id_fehlt' };
+      if (this.isDemo) {
+        const apply = (arr) => { const p = (arr || []).find(x => x.id === id); if (p) p.gesperrt = !!gesperrt; };
+        apply(window.mockProjekteData);
+        apply(window.MOCK_PROJEKTE);
+        try { window.dispatchEvent(new Event('krs:mock-seeded')); } catch (_) {}
+        return { success: true, id, gesperrt: !!gesperrt };
+      }
+      const { data, error } = await this.client.rpc('set_projekt_gesperrt', {
+        p_id: id, p_gesperrt: !!gesperrt });
+      if (error) throw new Error('setProjektGesperrt: ' + error.message);
       return data || { success: false, error: 'keine_antwort' };
     }
     async getSchuelerStatus(code) {
@@ -1031,7 +1076,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v39';
+  window.KRS_VERSION = 'v41';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -2504,7 +2549,8 @@ function App() {
         min_klasse: p.min_klasse ?? 5,
         max_klasse: p.max_klasse ?? 9,
         bild_url: p.bild_url || null,
-        status: p.status || 'aktiv'
+        status: p.status || 'aktiv',
+        gesperrt: !!p.gesperrt
       })));
       replaceArray(mockTauschData, tauschwuensche || []);
       replaceArray(mockZuteilungenData, zuteilungen || []);
@@ -2630,9 +2676,10 @@ function App() {
   // Norbert ist gleichzeitig Admin UND Lehrer für sein eigenes Projekt).
   const ALLOWED_SECTIONS = {
     super_admin: null, // null = alle erlaubt
-    projektleitung: new Set(['dashboard', 'projekte', 'anmeldungen', 'export', 'phase', 'feedback']),
-    klassenlehrer: new Set(['meine-klasse']),
-    projektlehrer: new Set(['mein-projekt']),
+    projektleitung: new Set(['dashboard', 'projekte', 'anmeldungen', 'export', 'phase', 'feedback', 'alle-projekte']),
+    klassenlehrer: new Set(['meine-klasse', 'alle-projekte']),
+    // v41: 'alle-projekte' = read-only Übersicht aller Projekte (gegen Dopplungen)
+    projektlehrer: new Set(['mein-projekt', 'alle-projekte']),
   };
   const allowedSet = ALLOWED_SECTIONS[currentUserRolle] || null;
   const isAllowed = (section) => !allowedSet || allowedSet.has(section);
@@ -2671,6 +2718,8 @@ function App() {
     { section: 'lehrer', label: '👨‍🏫 Lehrer', always: true, badge: fmtCount(lehrerCount) },
     // v25: "Mein Projekt" — nur sichtbar für projektlehrer und super_admin (über ALLOWED_SECTIONS gefiltert)
     { section: 'mein-projekt', label: '📚 Mein Projekt', always: true },
+    // v41: "Alle Projekte" — read-only Übersicht (Kollegen sehen alle Projekte → Dopplungen vermeiden)
+    { section: 'alle-projekte', label: '📖 Alle Projekte', always: true },
     // v27/E1: "Meine Klasse" — nur sichtbar für klassenlehrer und super_admin (über ALLOWED_SECTIONS gefiltert)
     { section: 'meine-klasse', label: '📋 Meine Klasse', always: true },
     { type: 'divider', label: 'Ablauf' },
@@ -2745,6 +2794,7 @@ function App() {
         ${activeSection === 'projekte' && html`<${ProjekteView} setModal=${setModal} refreshKey=${refreshKey} loadAll=${loadAll} />`}
         ${activeSection === 'lehrer' && html`<${LehrerView} setModal=${setModal} refreshKey=${refreshKey} loadAll=${loadAll} />`}
         ${activeSection === 'mein-projekt' && html`<${ProjektLehrerView} setModal=${setModal} refreshKey=${refreshKey} loadAll=${loadAll} phase=${phase} currentDbUserId=${currentDbUserId} />`}
+        ${activeSection === 'alle-projekte' && html`<${AlleProjekteView} refreshKey=${refreshKey} currentDbUserId=${currentDbUserId} />`}
         ${activeSection === 'meine-klasse' && html`<${KlassenlehrerView} refreshKey=${refreshKey} currentDbUserId=${currentDbUserId} />`}
         ${activeSection === 'anmeldungen' && html`<${AnmeldungenView} />`}
         ${activeSection === 'verteilung' && html`<${VerteilungView} setModal=${setModal} refreshKey=${refreshKey} reload=${loadAll} />`}
@@ -2964,6 +3014,10 @@ function SchuelerView({ refreshKey, reload }) {
   const [csvPreview, setCsvPreview] = useState(null);
   const [importing, setImporting] = useState(false);
   const [showCsvInfo, setShowCsvInfo] = useState(false); // Task #7
+  // v41: Einzelnen Schüler nachträglich anlegen
+  const [showCreate, setShowCreate] = useState(false);
+  const [createForm, setCreateForm] = useState({ vorname: '', nachname: '', klasse: '' });
+  const [createBusy, setCreateBusy] = useState(false);
   // v38: Bulk-Zuordnung
   const [localKey, setLocalKey] = useState(0);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -2996,6 +3050,42 @@ function SchuelerView({ refreshKey, reload }) {
     });
   };
   const resetKlassen = () => setFilterKlassen(new Set());
+
+  // v41: Einzelnen Schüler anlegen (Name + Klasse). Code wird serverseitig erzeugt.
+  const handleCreateSchueler = async () => {
+    const vn = String(createForm.vorname || '').trim();
+    const nn = String(createForm.nachname || '').trim();
+    const kl = String(createForm.klasse || '').trim().toLowerCase();
+    if (!vn || !nn) { showToast('Bitte Vor- und Nachname eingeben.', 'error'); return; }
+    if (!validateKlasse(kl)) { showToast('Klasse ungültig — Format z.B. 7b oder 10a.', 'error'); return; }
+    setCreateBusy(true);
+    try {
+      const res = await service.createSchueler({ vorname: vn, nachname: nn, klasse: kl });
+      if (!res || !res.success) {
+        const map = {
+          name_fehlt: 'Vor- oder Nachname fehlt.',
+          klasse_ungueltig: 'Klasse ungültig (z.B. 7b oder 10a).',
+          nicht_berechtigt: 'Keine Berechtigung — nur für Admins.',
+          code_kollision: 'Code-Erzeugung fehlgeschlagen, bitte erneut versuchen.',
+        };
+        showToast(map[res && res.error] || ('Fehler: ' + (res && res.error || 'unbekannt')), 'error');
+        return;
+      }
+      if (res.warnung === 'name_existiert_bereits') {
+        showToast('Angelegt — Hinweis: Name in dieser Klasse existierte bereits. Code: ' + res.code, 'info');
+      } else {
+        showToast('✓ ' + vn + ' ' + nn + ' (' + kl + ') angelegt. Code: ' + res.code, 'success');
+      }
+      setCreateForm({ vorname: '', nachname: '', klasse: kl }); // Klasse beibehalten für Serieneingabe
+      setShowCreate(false);
+      setLocalKey(k => k + 1);
+      if (typeof reload === 'function') reload();
+    } catch (e) {
+      showToast('Fehler beim Anlegen: ' + (e && e.message || e), 'error');
+    } finally {
+      setCreateBusy(false);
+    }
+  };
 
   const gefiltert = mockSchueler.filter(s => {
     const q = search.toLowerCase();
@@ -3432,6 +3522,7 @@ function SchuelerView({ refreshKey, reload }) {
       </div>
       <div class="btn-group">
         <input type="file" accept=".csv" onChange=${handleCSVUpload} style="display:none" id="csv-input" />
+        <button class="btn btn-primary" data-testid="schueler-anlegen-btn" onClick=${() => { setCreateForm(f => ({ vorname: '', nachname: '', klasse: f.klasse || '' })); setShowCreate(true); }} title="Einzelnen Schüler nachträglich anlegen (Name + Klasse)">➕ Schüler anlegen</button>
         <button class="btn btn-secondary" onClick=${() => document.getElementById('csv-input').click()}>📥 CSV importieren</button>
         <button class="btn btn-secondary" data-testid="csv-export" onClick=${exportSchuelerCSV} title="Aktuell gefilterte Liste als CSV exportieren (Backup) — ohne Filter: alle Schüler">📤 CSV exportieren</button>
         <!-- Task #7: Info-Button CSV-Format -->
@@ -3460,6 +3551,39 @@ S002;Erika;Musterfrau;7b;7</pre>
                 </tbody>
               </table>
               <a href="schueler-template.csv" download style="display:inline-block;margin-top:16px;" class="btn btn-secondary btn-small">⬇️ Vorlage herunterladen</a>
+            </div>
+          </div>
+        `}
+        ${showCreate && html`
+          <div class="modal-overlay" onClick=${() => !createBusy && setShowCreate(false)}>
+            <div class="modal-content" onClick=${e => e.stopPropagation()} style="max-width:460px;">
+              <button class="modal-close" onClick=${() => !createBusy && setShowCreate(false)} aria-label="Schließen">×</button>
+              <h2>➕ Schüler anlegen</h2>
+              <p style="color:var(--text-muted);font-size:13px;margin:-4px 0 14px;">Für einzelne Nachzügler. Der Anmelde-Code wird automatisch erzeugt. Für ganze Listen lieber den CSV-Import nutzen.</p>
+              <div class="input-group">
+                <label>Vorname *</label>
+                <input type="text" data-testid="create-vorname" value=${createForm.vorname}
+                  onInput=${e => setCreateForm(prev => ({ ...prev, vorname: e.target.value }))}
+                  onKeyDown=${e => { if (e.key === 'Enter') handleCreateSchueler(); }} autofocus />
+              </div>
+              <div class="input-group">
+                <label>Nachname *</label>
+                <input type="text" data-testid="create-nachname" value=${createForm.nachname}
+                  onInput=${e => setCreateForm(prev => ({ ...prev, nachname: e.target.value }))}
+                  onKeyDown=${e => { if (e.key === 'Enter') handleCreateSchueler(); }} />
+              </div>
+              <div class="input-group">
+                <label>Klasse * <span style="color:var(--text-muted);font-weight:400;">(z.B. 7b, 10a)</span></label>
+                <input type="text" data-testid="create-klasse" value=${createForm.klasse}
+                  onInput=${e => setCreateForm(prev => ({ ...prev, klasse: e.target.value }))}
+                  onKeyDown=${e => { if (e.key === 'Enter') handleCreateSchueler(); }} />
+              </div>
+              <div class="btn-group" style="margin-top:16px;justify-content:flex-end;">
+                <button class="btn btn-ghost" onClick=${() => setShowCreate(false)} disabled=${createBusy}>Abbrechen</button>
+                <button class="btn btn-primary" data-testid="create-submit" onClick=${handleCreateSchueler} disabled=${createBusy}>
+                  ${createBusy ? 'Lege an …' : 'Anlegen'}
+                </button>
+              </div>
             </div>
           </div>
         `}
@@ -4045,6 +4169,31 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
     }
   };
 
+  // v41: Projekt für weitere SuS sperren/entsperren.
+  const handleSperrToggle = async (p) => {
+    const willLock = !p.gesperrt;
+    const frage = willLock
+      ? 'Projekt „' + (p.titel || 'Projekt') + '" für weitere Schüler:innen SPERREN?\n\nBereits zugeteilte SuS bleiben drin. Neue Wahlen sind nicht mehr möglich.'
+      : 'Sperre für „' + (p.titel || 'Projekt') + '" wieder AUFHEBEN?';
+    if (!window.confirm(frage)) return;
+    try {
+      const res = await (new window.KrsDataService()).setProjektGesperrt({ id: p.id, gesperrt: willLock });
+      if (res && res.success === false) {
+        showToast('Fehler: ' + (res.error || 'unbekannt'), 'error');
+        return;
+      }
+      if (window.KRS_MODE === 'produktiv' && typeof loadAll === 'function') {
+        await loadAll();
+      } else {
+        p.gesperrt = willLock;
+        setLocalKey(k => k + 1);
+      }
+      showToast(willLock ? '🔒 Projekt gesperrt' : '🔓 Projekt entsperrt', 'success');
+    } catch (err) {
+      showToast('Fehler: ' + err.message, 'error');
+    }
+  };
+
   return html`
     <div class="main-header">
       <div>
@@ -4119,15 +4268,91 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
                         onClick=${(e) => { e.stopPropagation(); handleStatusToggle(p); }}>
                     ${p.status || 'entwurf'} ${p.status === 'veroeffentlicht' ? '✓' : '↻'}
                   </span>
+                  ${p.gesperrt ? html`<span class="pill" style="background:#9b1c1c;color:#fff;margin-left:4px;">🔒 gesperrt</span>` : ''}
                 </td>
                 <td class="actions-cell">
                   <button class="btn btn-ghost btn-small" onClick=${() => openEditModal(p)}>✏️ Bearbeiten</button>
+                  <button class="btn btn-ghost btn-small" data-testid="sperr-toggle"
+                          title=${p.gesperrt ? 'Sperre aufheben' : 'Für weitere SuS sperren'}
+                          onClick=${(e) => { e.stopPropagation(); handleSperrToggle(p); }}>
+                    ${p.gesperrt ? '🔓 Entsperren' : '🔒 Sperren'}
+                  </button>
                 </td>
               </tr>
             `;
           })}
         </tbody>
       </table>
+    </div>
+  `;
+}
+
+// === ALLE PROJEKTE (read-only Übersicht, v41) ===
+// Damit Kolleg:innen alle Projekte sehen und Doppelungen vermeiden.
+// Keine Bearbeitung — reine Leseansicht (Titel, Lehrer, Plätze, Klassen, Status).
+function AlleProjekteView({ refreshKey, currentDbUserId }) {
+  const [q, setQ] = useState('');
+  const alle = (window.mockProjekteData || []);
+  const term = q.trim().toLowerCase();
+  const liste = alle
+    .filter(p => !term
+      || String(p.titel || '').toLowerCase().includes(term)
+      || getProjektLehrerNames(p).join(' ').toLowerCase().includes(term))
+    .sort((a, b) => String(a.titel || '').localeCompare(String(b.titel || ''), 'de'));
+
+  const statusBadge = (p) => {
+    if (p.gesperrt) return html`<span class="badge" style="background:#9b1c1c;color:#fff;">🔒 gesperrt</span>`;
+    if (p.status === 'veroeffentlicht') return html`<span class="badge" style="background:#166534;color:#fff;">veröffentlicht</span>`;
+    return html`<span class="badge badge-muted">Entwurf</span>`;
+  };
+
+  return html`
+    <div class="main-header">
+      <div>
+        <h1 class="main-title">📖 Alle Projekte</h1>
+        <div class="main-subtitle">${alle.length} Projekte · Übersicht zur Vermeidung von Doppelungen (nur Lesen)</div>
+      </div>
+      <div class="btn-group">
+        <input type="text" placeholder="🔍 Titel oder Lehrer…" value=${q}
+          onInput=${e => setQ(e.target.value)}
+          style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;min-width:220px;" />
+      </div>
+    </div>
+    <div class="card">
+      ${liste.length === 0 ? html`
+        <div class="empty-hint" style="padding:24px;text-align:center;">Keine Projekte gefunden.</div>
+      ` : html`
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:14px;">
+            <thead>
+              <tr style="text-align:left;border-bottom:2px solid var(--border);">
+                <th style="padding:8px 10px;">Titel</th>
+                <th style="padding:8px 10px;">Lehrkraft</th>
+                <th style="padding:8px 10px;">Klassen</th>
+                <th style="padding:8px 10px;text-align:center;">Plätze</th>
+                <th style="padding:8px 10px;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${liste.map(p => {
+                const eigenes = currentDbUserId && isProjektTeacher(p, currentDbUserId);
+                return html`
+                  <tr style=${"border-bottom:1px solid var(--border);" + (eigenes ? "background:rgba(74,106,131,0.08);" : "")}>
+                    <td style="padding:8px 10px;font-weight:600;">
+                      ${p.titel || '—'} ${eigenes ? html`<span class="badge badge-muted">mein</span>` : ''}
+                      ${p.ort ? html`<div style="font-weight:400;color:var(--text-muted);font-size:12px;">📍 ${p.ort}</div>` : ''}
+                    </td>
+                    <td style="padding:8px 10px;">${getProjektLehrerNames(p).join(', ') || '—'}</td>
+                    <td style="padding:8px 10px;white-space:nowrap;">${p.min_klasse}–${p.max_klasse}</td>
+                    <td style="padding:8px 10px;text-align:center;">${p.max_plaetze ?? '—'}</td>
+                    <td style="padding:8px 10px;">${statusBadge(p)}</td>
+                  </tr>
+                `;
+              })}
+            </tbody>
+          </table>
+        </div>
+      `}
     </div>
   `;
 }

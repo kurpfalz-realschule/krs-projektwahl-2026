@@ -26,7 +26,7 @@ export async function openAppLoggedIn(page: Page) {
   const version = await page.evaluate(() => (window as any).KRS_VERSION);
   const mode = await page.evaluate(() => (window as any).KRS_MODE);
   expect.soft(mode, 'forceMode=demo sollte Demo-Modus erzwingen').toBe('demo');
-  expect.soft(version, 'KRS_VERSION sollte v22+ sein').toMatch(/^v(2[2-9]|3[0-9])/);
+  expect.soft(version, 'KRS_VERSION sollte v22+ sein').toMatch(/^v(2[2-9]|[3-9][0-9])/);
 
   // Demo-Login-Form abwarten und absenden
   await page.locator('#gateFormDemo').waitFor({ state: 'visible', timeout: 5_000 });

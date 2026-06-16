@@ -203,6 +203,7 @@ footer a:hover{text-decoration:underline}
       min_klasse: row.min_klasse,
       max_klasse: row.max_klasse,
       bild_url: row.bild_url || null,
+      gesperrt: !!row.gesperrt,
     };
   }
 
@@ -218,6 +219,7 @@ footer a:hover{text-decoration:underline}
       max_klasse: row.max_klasse,
       freie_plaetze: row.freie_plaetze,
       bild_url: row.bild_url || null,
+      gesperrt: !!row.gesperrt,
     };
   }
 
@@ -555,6 +557,7 @@ footer a:hover{text-decoration:underline}
         for (const id of ids) {
           const p = projekte.find(x => x.id === id);
           if (!p) return { success: false, error: 'projekt_unbekannt' };
+          if (p.gesperrt) return { success: false, error: 'projekt_gesperrt' };
           if (klassenstufe != null && (klassenstufe < p.min_klasse || klassenstufe > p.max_klasse)) {
             return { success: false, error: 'klassenstufe_passt_nicht' };
           }
@@ -718,7 +721,7 @@ footer a:hover{text-decoration:underline}
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v39';
+  window.KRS_VERSION = 'v41';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '— Version:', window.KRS_VERSION);
 })();
 </script>
@@ -972,6 +975,8 @@ function App() {
   const passendeProjekte = useMemo(() => {
     if (!schueler) return [];
     return projekteAll.filter(p =>
+      // v41: gesperrte Projekte sind für weitere SuS nicht wählbar.
+      !p.gesperrt &&
       schueler.klassenstufe >= p.min_klasse && schueler.klassenstufe <= p.max_klasse
     );
   }, [schueler, projekteAll]);
@@ -1022,6 +1027,7 @@ function App() {
           unterschiedliche_wahlen: 'Die drei Projekte müssen unterschiedlich sein.',
           klassenstufe_passt_nicht: 'Eines der gewählten Projekte ist nicht für deine Klassenstufe.',
           projekt_unbekannt: 'Eines der Projekte ist nicht (mehr) verfügbar. Bitte Seite neu laden.',
+          projekt_gesperrt: 'Eines der Projekte ist geschlossen und nicht mehr wählbar. Bitte Seite neu laden.',
         }[code] || ('Es gab ein Problem (' + code + '). Bitte sag deinem Klassenlehrer Bescheid.');
         setSubmitError(msg);
         return;

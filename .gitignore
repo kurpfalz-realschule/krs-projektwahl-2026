@@ -3,6 +3,7 @@ test-results/
 playwright-report/
 .DS_Store
 *.log
+*.check.mjs
 .env
 .env.*
 # Niemals echte Personendaten committen:

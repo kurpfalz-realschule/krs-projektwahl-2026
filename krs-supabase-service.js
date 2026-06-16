@@ -57,6 +57,7 @@
       min_klasse: row.min_klasse,
       max_klasse: row.max_klasse,
       bild_url: row.bild_url || null,
+      gesperrt: !!row.gesperrt,
     };
   }
 
@@ -73,6 +74,7 @@
       max_klasse: row.max_klasse,
       freie_plaetze: row.freie_plaetze,
       bild_url: row.bild_url || null,
+      gesperrt: !!row.gesperrt,
     };
   }
 
@@ -342,6 +344,38 @@
       }
       const { data, error } = await this.client.rpc('set_schueler_aktiv', { p_code: cleanCode, p_aktiv: !!aktiv });
       if (error) throw new Error('setSchuelerAktiv: ' + error.message);
+      return data || { success: false, error: 'keine_antwort' };
+    }
+    // v41: Einzelnen Schüler nachträglich anlegen (Name + Klasse).
+    async createSchueler({ vorname, nachname, klasse }) {
+      const vn = String(vorname || '').trim();
+      const nn = String(nachname || '').trim();
+      const kl = String(klasse || '').trim().toLowerCase();
+      if (!vn || !nn) return { success: false, error: 'name_fehlt' };
+      if (!/^(?:[5-9]|10)[a-z]$/.test(kl)) return { success: false, error: 'klasse_ungueltig' };
+      if (this.isDemo) {
+        const list = (typeof window !== 'undefined' && (window.mockSchueler ||= [])) || [];
+        const stufe = parseInt(String(kl).match(/^\d+/)?.[0] || '0', 10);
+        const code = kl.toUpperCase() + '-' + Math.random().toString(36).slice(2, 6).toUpperCase();
+        list.push({ code, vorname: vn, nachname: nn, klasse: kl, klassenstufe: stufe,
+          hat_gewaehlt: false, zuteilung: null, fixiert: false, aktiv: true });
+        return { success: true, code, vorname: vn, nachname: nn, klasse: kl, klassenstufe: stufe };
+      }
+      const { data, error } = await this.client.rpc('admin_create_schueler', {
+        p_vorname: vn, p_nachname: nn, p_klasse: kl });
+      if (error) throw new Error('createSchueler: ' + error.message);
+      return data || { success: false, error: 'keine_antwort' };
+    }
+    // v41: Projekt für weitere SuS sperren/entsperren.
+    async setProjektGesperrt({ id, gesperrt }) {
+      if (!id) return { success: false, error: 'id_fehlt' };
+      if (this.isDemo) {
+        const apply = (arr) => { const p = (arr || []).find(x => x.id === id); if (p) p.gesperrt = !!gesperrt; };
+        if (typeof window !== 'undefined') { apply(window.mockProjekteData); apply(window.MOCK_PROJEKTE); }
+        return { success: true, id, gesperrt: !!gesperrt };
+      }
+      const { data, error } = await this.client.rpc('set_projekt_gesperrt', { p_id: id, p_gesperrt: !!gesperrt });
+      if (error) throw new Error('setProjektGesperrt: ' + error.message);
       return data || { success: false, error: 'keine_antwort' };
     }
 
