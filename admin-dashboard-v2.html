@@ -469,6 +469,15 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
         .from('system_settings')
         .upsert({ key: 'phase', value: newPhase }, { onConflict: 'key' });
       if (error) throw new Error('setPhase: ' + error.message);
+      // v42-FIX: Phase ist der Master-Schalter — anmeldung_offen automatisch mitführen.
+      // Vorher war das serverseitige create_wahl-Gate (system_settings.anmeldung_offen,
+      // Default false) von der Phase ENTKOPPELT und wurde nirgends im UI gesetzt →
+      // Schüler konnten wählen, aber NICHT abschicken ("anmeldung_geschlossen").
+      // value ist ein JS-Boolean → JSONB true/false → create_wahl prüft value::text='true'.
+      const { error: eOffen } = await this.client
+        .from('system_settings')
+        .upsert({ key: 'anmeldung_offen', value: newPhase === 'anmeldung' }, { onConflict: 'key' });
+      if (eOffen) throw new Error('setPhase(anmeldung_offen): ' + eOffen.message);
       return { success: true };
     }
     async setSystemSetting(key, value) {
@@ -1076,7 +1085,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v41';
+  window.KRS_VERSION = 'v42';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -4399,6 +4408,12 @@ function AlleProjekteView({ refreshKey, currentDbUserId }) {
 function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUserId }) {
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState(null);
+  // Stale-Closure-Fix (analog Admin-Projekt-Modal): das Modal-JSX wird in einem
+  // useEffect gebaut und via setModal gespeichert; der Speichern-Handler würde sonst
+  // ein veraltetes formData aus der Closure lesen → beim Projektlehrer-Bearbeiten
+  // schlugen dadurch manche Projekte fehl. Immer formDataRef.current verwenden.
+  const formDataRef = useRef(null);
+  formDataRef.current = formData;
 
   // Demo-Fallback: wenn kein dbUserId (Demo-Modus), nehmen wir den ersten projektlehrer
   // aus mockLehrerData — damit die View überhaupt etwas anzuzeigen hat.
@@ -4548,11 +4563,15 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
           <div class="btn-group" style="margin-top:20px;">
             <button class="btn btn-ghost" onClick=${closeModal}>Abbrechen</button>
             <button class="btn btn-success" onClick=${async () => {
-              if (!formData.titel || !(formData.kurzbeschreibung || '').trim()) {
+              // Stale-Closure-Fix: aktuellen Formularstand aus der Ref lesen, nicht
+              // aus der (evtl. veralteten) Closure. Behebt "manche Projekte lassen
+              // sich nicht bearbeiten" beim Projektlehrer-Self-Service.
+              const f = formDataRef.current || formData || {};
+              if (!f.titel || !(f.kurzbeschreibung || '').trim()) {
                 showToast('Titel und Kurzbeschreibung sind erforderlich.', 'error');
                 return;
               }
-              if ((formData.kurzbeschreibung || '').length > 300) {
+              if ((f.kurzbeschreibung || '').length > 300) {
                 showToast('Kurzbeschreibung darf max. 300 Zeichen lang sein.', 'error');
                 return;
               }
@@ -4564,19 +4583,19 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
                     // Wir senden trotzdem konsistente Werte mit, falls der Trigger
                     // (z.B. bei super_admin-Maintenance) nicht greift.
                     const payload = {
-                      titel: formData.titel,
+                      titel: f.titel,
                       // Bugfix: leerer String statt null/undefined — DB-Spalte ist NOT NULL.
-                      // Stale-Closure bei schnellem Tippen konnte formData.kurzbeschreibung
+                      // Stale-Closure bei schnellem Tippen konnte kurzbeschreibung
                       // auf undefined zurücksetzen → NOT NULL constraint violation.
-                      kurzbeschreibung: (formData.kurzbeschreibung || '').trim(),
-                      langbeschreibung: formData.langbeschreibung || null,
-                      ort: formData.ort || null,
+                      kurzbeschreibung: (f.kurzbeschreibung || '').trim(),
+                      langbeschreibung: f.langbeschreibung || null,
+                      ort: f.ort || null,
                       lehrer_id: effectiveOwnerId,
                       lehrer2_id: null,
-                      min_teilnehmer: formData.min_teilnehmer ?? 6,
-                      max_plaetze: formData.max_plaetze ?? 12,
-                      min_klasse: formData.min_klasse ?? 5,
-                      max_klasse: formData.max_klasse ?? 9,
+                      min_teilnehmer: f.min_teilnehmer ?? 6,
+                      max_plaetze: f.max_plaetze ?? 12,
+                      min_klasse: f.min_klasse ?? 5,
+                      max_klasse: f.max_klasse ?? 9,
                       status: 'entwurf',
                     };
                     await svc.createProjekt(payload);
@@ -4584,11 +4603,11 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
                   } else {
                     // Whitelist: Backend-Trigger blockt alles andere.
                     const payload = {
-                      titel: formData.titel,
+                      titel: f.titel,
                       // Bugfix: defensiver Fallback analog createProjekt
-                      kurzbeschreibung: (formData.kurzbeschreibung || '').trim(),
-                      langbeschreibung: formData.langbeschreibung || null,
-                      ort: formData.ort || null,
+                      kurzbeschreibung: (f.kurzbeschreibung || '').trim(),
+                      langbeschreibung: f.langbeschreibung || null,
+                      ort: f.ort || null,
                     };
                     await svc.updateProjekt(editingId, payload);
                     showToast('Projekt aktualisiert!', 'success');
@@ -4597,7 +4616,7 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
                   // Demo-Modus: Mock-Array direkt mutieren
                   if (editingId === 'new') {
                     mockProjekteData.push({
-                      ...formData,
+                      ...f,
                       lehrer_id: effectiveOwnerId,
                       lehrer2_id: '',
                       status: 'entwurf',
@@ -4609,11 +4628,11 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
                       // Whitelist analog Backend
                       mockProjekteData[idx] = {
                         ...mockProjekteData[idx],
-                        titel: formData.titel,
-                        kurzbeschreibung: (formData.kurzbeschreibung || '').trim(),
-                        langbeschreibung: formData.langbeschreibung,
-                        ort: formData.ort,
-                        bild_url: formData.bild_url,
+                        titel: f.titel,
+                        kurzbeschreibung: (f.kurzbeschreibung || '').trim(),
+                        langbeschreibung: f.langbeschreibung,
+                        ort: f.ort,
+                        bild_url: f.bild_url,
                       };
                     }
                     showToast('Projekt aktualisiert! (Demo)', 'success');

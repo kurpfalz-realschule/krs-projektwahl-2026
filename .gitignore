@@ -14,3 +14,5 @@ schueler-ohne-feste-klasse.csv
 beispiel-schuelerbrief.pdf
 *Schülerliste*
 *Musterlösung*
+*.syntax.mjs
+*.allmodules.mjs
