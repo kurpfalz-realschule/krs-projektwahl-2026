@@ -77,3 +77,22 @@ CI beobachten — bei grün deployt GitHub Pages v41 automatisch.
 ## 6) Einstiegs-Prompt für neuen Chat
 
 > Projekt: KRS Projektwahl 2026, Ordner „projekwoche app neu". Stand v41 (Handover-2026-06-16). Umgesetzt: Schüler-Anlegen-Formular (RPC admin_create_schueler), Projekt-Sperren (Spalte gesperrt + RPC set_projekt_gesperrt + Trigger trg_wahl_nicht_gesperrt), read-only AlleProjekteView für Lehrer. Migration v41 muss in Supabase laufen (nach v40). Offen: Edit-Bug auf einzelnen Projekten klären (Fehlermeldung von Norbert nötig), Einladungs-Mailversand in Supabase prüfen.
+
+---
+
+## 7) Nachtrag 16.06. (Session 2) — wichtige Korrekturen
+
+**A) security_invoker-Zwischenfall (behoben).** In v41 wurde zunächst `ALTER VIEW projekte_public SET (security_invoker = true)` gesetzt. Das hat in der Produktiv-DB **alle Projekte für anon ausgeblendet** ("alle Projekte verschwunden"), weil anon keine eigene RLS-SELECT-Regel auf projekte/users hat — die View lief vorher bewusst mit Definer-Rechten. Fix: im SQL-Editor `ALTER VIEW public.projekte_public SET (security_invoker = false);` ausgeführt → Projekte sofort zurück (View liefert wieder 21 veröffentlichte Projekte). Die Migrationsdatei wurde entsprechend auf `security_invoker = false` korrigiert (mit erklärendem Kommentar). **Optionale spätere Härtung nur zusammen mit passenden anon-RLS-Policies.**
+
+**B) CI rot war KEIN v41-Bug.** Lauf #24 (8a3a9dc) scheiterte nur an zwei veralteten Versions-Regexes, die bei v39 deckelten und „v41" ablehnten:
+- `tests/e2e/schueler-frontend-smoke.spec.ts:19` → jetzt `/^v([3-9][0-9])/`
+- `tests/e2e/smoke-login.spec.ts:46` → jetzt `/^v(2[2-9]|[3-9][0-9])/`
+Alle 24 v41-Feature-Tests waren grün. `tests/fixtures/app.ts` war bereits korrekt. Keine weiteren Versions-Deckel im Test-Ordner.
+
+**C) Offener Schritt: Push.** Fix liegt als lokaler Commit `cb9c848` vor (2 Test-Specs + korrigierte Migration). Muss noch gepusht werden (Token bleibt bei Norbert):
+```bash
+cd "/Users/admin/Downloads/Codex playground/projekwoche app neu"
+rm -f .git/index.lock
+git push "https://DEIN-TOKEN@github.com/kurpfalz-realschule/krs-projektwahl-2026.git" main
+```
+Danach CI-Lauf #25 → bei grün deployt GitHub Pages v41 automatisch live.

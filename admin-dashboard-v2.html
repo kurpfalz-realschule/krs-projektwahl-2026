@@ -2544,6 +2544,7 @@ function App() {
         lehrer: joinLehrerNames(p),
         ort: p.ort || '',
         kurzbeschreibung: p.kurzbeschreibung || p.beschreibung || '',
+        langbeschreibung: p.langbeschreibung || '',
         min_teilnehmer: p.min_teilnehmer ?? 0,
         max_plaetze: p.max_plaetze ?? p.max_teilnehmer ?? 0,
         min_klasse: p.min_klasse ?? 5,
@@ -4292,6 +4293,12 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
 // Keine Bearbeitung — reine Leseansicht (Titel, Lehrer, Plätze, Klassen, Status).
 function AlleProjekteView({ refreshKey, currentDbUserId }) {
   const [q, setQ] = useState('');
+  const [expanded, setExpanded] = useState(() => new Set());
+  const toggle = (id) => setExpanded(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   const alle = (window.mockProjekteData || []);
   const term = q.trim().toLowerCase();
   const liste = alle
@@ -4336,18 +4343,43 @@ function AlleProjekteView({ refreshKey, currentDbUserId }) {
             <tbody>
               ${liste.map(p => {
                 const eigenes = currentDbUserId && isProjektTeacher(p, currentDbUserId);
-                return html`
-                  <tr style=${"border-bottom:1px solid var(--border);" + (eigenes ? "background:rgba(74,106,131,0.08);" : "")}>
+                const offen = expanded.has(p.id);
+                const kurz = (p.kurzbeschreibung || '').trim();
+                const lang = (p.langbeschreibung || '').trim();
+                const hatText = !!(kurz || lang);
+                const rows = [
+                  html`
+                  <tr key=${'r-' + p.id} style=${"border-bottom:1px solid var(--border);" + (eigenes ? "background:rgba(74,106,131,0.08);" : "") + (offen ? "background:rgba(74,106,131,0.04);" : "")}>
                     <td style="padding:8px 10px;font-weight:600;">
-                      ${p.titel || '—'} ${eigenes ? html`<span class="badge badge-muted">mein</span>` : ''}
-                      ${p.ort ? html`<div style="font-weight:400;color:var(--text-muted);font-size:12px;">📍 ${p.ort}</div>` : ''}
+                      <button type="button"
+                        onClick=${() => toggle(p.id)}
+                        aria-expanded=${offen}
+                        title=${offen ? 'Beschreibung einklappen' : 'Beschreibung anzeigen'}
+                        style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--text-muted);padding:0 6px 0 0;">
+                        ${offen ? '▾' : '▸'}
+                      </button>
+                      <span style="cursor:pointer;" onClick=${() => toggle(p.id)}>${p.titel || '—'}</span>
+                      ${eigenes ? html`<span class="badge badge-muted">mein</span>` : ''}
+                      ${p.ort ? html`<div style="font-weight:400;color:var(--text-muted);font-size:12px;padding-left:20px;">📍 ${p.ort}</div>` : ''}
                     </td>
                     <td style="padding:8px 10px;">${getProjektLehrerNames(p).join(', ') || '—'}</td>
                     <td style="padding:8px 10px;white-space:nowrap;">${p.min_klasse}–${p.max_klasse}</td>
                     <td style="padding:8px 10px;text-align:center;">${p.max_plaetze ?? '—'}</td>
                     <td style="padding:8px 10px;">${statusBadge(p)}</td>
                   </tr>
-                `;
+                `];
+                if (offen) {
+                  rows.push(html`
+                  <tr key=${'d-' + p.id} style="border-bottom:1px solid var(--border);">
+                    <td colspan="5" style="padding:4px 10px 14px 36px;color:var(--text);font-size:13px;line-height:1.5;">
+                      ${kurz ? html`<div style="font-weight:600;margin-bottom:4px;">${kurz}</div>` : ''}
+                      ${lang ? html`<div style="white-space:pre-wrap;color:var(--text-muted);">${lang}</div>` : ''}
+                      ${!hatText ? html`<div style="color:var(--text-muted);font-style:italic;">Keine Beschreibung hinterlegt.</div>` : ''}
+                    </td>
+                  </tr>
+                `);
+                }
+                return rows;
               })}
             </tbody>
           </table>
