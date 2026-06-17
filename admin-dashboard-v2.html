@@ -194,7 +194,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
 @keyframes toastSlide{from{opacity:0;transform:translateX(400px)}to{opacity:1;transform:translateX(0)}}
 
 /* === MODE BADGE === */
-.mode-badge{position:fixed;top:12px;right:12px;z-index:999;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;box-shadow:var(--shadow-sm)}
+.topbar-badges{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:16px}
+.mode-badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;box-shadow:var(--shadow-sm)}
 .mode-badge.demo{background:#FEF3C7;color:#92400E;border:1px solid #F59E0B}
 .mode-badge.live{background:#D1FAE5;color:#065F46;border:1px solid #10B981}
 
@@ -1088,7 +1089,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v42';
+  window.KRS_VERSION = 'v43';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -2770,9 +2771,6 @@ function App() {
 
   return html`
     <div class="app">
-      <div class=${"mode-badge " + (mode === 'produktiv' ? 'live' : 'demo')}>
-        ${mode === 'produktiv' ? '● Live' : 'Demo'}
-      </div>
       ${loading && html`
         <div class="loading-overlay">
           <div class="loading-spinner"></div>
@@ -2821,9 +2819,12 @@ function App() {
       </aside>
 
       <main class="main">
-        <!-- Task #8: Phase-Badge oben rechts im Hauptbereich -->
-        <div style="position:absolute;top:16px;right:20px;z-index:50;">
+        <!-- Badges-Zeile oben rechts: Phase + Live/Demo nebeneinander, im Fluss (keine Überlappung mit Seiten-Buttons) -->
+        <div class="topbar-badges">
           <${PhaseBadge} phase=${phase} navigate=${navigate} />
+          <div class=${"mode-badge " + (mode === 'produktiv' ? 'live' : 'demo')}>
+            ${mode === 'produktiv' ? '● Live' : 'Demo'}
+          </div>
         </div>
         <!-- v37 (Stretch): Hinweis wenn Deadline überschritten, Phase aber noch nicht umgeschaltet -->
         <${DeadlineBanner} phase=${phase} />
