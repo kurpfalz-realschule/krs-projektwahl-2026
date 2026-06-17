@@ -115,6 +115,20 @@ td.actions-cell{white-space:nowrap}
 .pill-wahl-3{background:var(--krs-gelb-light);color:var(--krs-gelb-dark)}
 .pill-wahl-null{background:var(--bg-subtle);color:var(--text-muted)}
 
+/* v46: Status-Legende (gewählt / zugeordnet / offen) */
+.status-legend{display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:12px;color:var(--text-muted);margin:4px 0 10px}
+.status-legend .lg{display:inline-flex;align-items:center;gap:5px}
+.status-legend .dot{width:11px;height:11px;border-radius:50%;display:inline-block}
+.dot-gewaehlt{background:var(--success)}
+.dot-zugeordnet{background:var(--krs-blau)}
+.dot-offen{background:var(--krs-gelb)}
+
+/* v46: Update-Banner (neue Version verfügbar) */
+.update-banner{position:fixed;top:0;left:0;right:0;z-index:2000;display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center;padding:10px 16px;background:var(--krs-blau);color:#fff;font-size:14px;font-weight:600;box-shadow:0 2px 10px rgba(0,0,0,.18)}
+.update-banner button{font-family:inherit;font-size:13px;font-weight:700;border:none;border-radius:6px;padding:7px 14px;cursor:pointer}
+.update-banner .btn-reload{background:#fff;color:var(--krs-blau-dark)}
+.update-banner .btn-later{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.6);font-weight:600}
+
 /* === ALERTS === */
 .alert{padding:12px 14px;border-radius:var(--radius-sm);margin-bottom:14px;font-size:14px}
 .alert-info{background:var(--krs-blau-light);color:var(--krs-blau-dark);border-left:4px solid var(--krs-blau)}
@@ -1090,7 +1104,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v45';
+  window.KRS_VERSION = 'v46';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -1747,6 +1761,53 @@ function applyImageFallback(e, fallback = LOGO_SRC) {
   if (!img || img.dataset.fallbackApplied === '1') return;
   img.dataset.fallbackApplied = '1';
   img.src = fallback;
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// v46: Einheitliche Status-Logik — „gewählt" vs. „zugeordnet" vs. „offen".
+// Rein clientseitig aus Feldern, die admin_list_schueler ohnehin liefert
+// (hat_gewaehlt, fixiert, zuteilung, aktiv). KEINE DB-Änderung nötig.
+//   • gewählt    = Schüler hat selbst gewählt (grün)
+//   • zugeordnet = vorab fest zugeordnet (fixiert + zuteilung) → 📌 (blau)
+//   • gebucht    = gewählt ODER zugeordnet (= „erledigt")
+//   • offen      = aktiv, aber weder gewählt noch zugeordnet (gelb)
+// ════════════════════════════════════════════════════════════════════════
+function istAktivS(s) { return !!s && s.aktiv !== false; }
+function istZugeordnetS(s) { return !!(s && s.fixiert && s.zuteilung); }
+function hatGewaehltS(s) { return !!(s && (s.hat_gewaehlt || (s.status && s.status.hat_gewaehlt))); }
+function istGebuchtS(s) { return istAktivS(s) && (istZugeordnetS(s) || hatGewaehltS(s)); }
+// Zählt eine Schülerliste in {gewaehlt, zugeordnet, offen, gebucht, gesamt, prozent}.
+// gesamt = nur aktive Schüler (inaktive nehmen nicht an der Wahl teil).
+function zaehleStatus(list) {
+  let gewaehlt = 0, zugeordnet = 0, offen = 0, gesamt = 0;
+  for (const s of (list || [])) {
+    if (!istAktivS(s)) continue;
+    gesamt++;
+    if (istZugeordnetS(s)) zugeordnet++;
+    else if (hatGewaehltS(s)) gewaehlt++;
+    else offen++;
+  }
+  const gebucht = gewaehlt + zugeordnet;
+  return { gewaehlt, zugeordnet, offen, gebucht, gesamt, prozent: gesamt ? Math.round((gebucht / gesamt) * 100) : 0 };
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// v46: Auto-Versionsprüfung. Single Source of Truth = die deployte Datei
+// selbst. Wir holen das eigene Dokument (cache:'no-store' + Cache-Bust) und
+// lesen die KRS_VERSION-Konstante per Regex. Kann nicht „out of sync" gehen,
+// keine Zusatzdatei. Liefert die Remote-Version oder null (bei Fehler still).
+// ════════════════════════════════════════════════════════════════════════
+async function fetchRemoteKrsVersion() {
+  try {
+    const url = location.href.split('#')[0].split('?')[0] + '?v=' + Date.now();
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res || !res.ok) return null;
+    const text = await res.text();
+    const m = text.match(/window\.KRS_VERSION\s*=\s*['"]([^'"]+)['"]/);
+    return m ? m[1] : null;
+  } catch (_) {
+    return null; // offline / Netzfehler → kein Update-Hinweis
+  }
 }
 
 const MOCK_LEHRER = [
@@ -2516,6 +2577,8 @@ function App() {
   const [currentUserRolle, setCurrentUserRolle] = useState('super_admin');
   // v25: App-User-PK des eingeloggten Users (für ProjektLehrerView-Filter)
   const [currentDbUserId, setCurrentDbUserId] = useState(null);
+  // v46: Wenn online eine neuere Version liegt → Banner mit Reload-Button.
+  const [updateVersion, setUpdateVersion] = useState(null);
 
   // Zentrales Daten-Lade — mutiert die Mock-Arrays in-place.
   const loadAll = useCallback(async () => {
@@ -2656,6 +2719,31 @@ function App() {
     return () => window.removeEventListener('krs:mock-seeded', onSeed);
   }, []);
 
+  // v46: Auto-Versionsprüfung. Nur Produktiv-Modus (Tests bleiben hermetisch).
+  // Prüft alle 5 min UND beim Zurückkehren in den Tab — aber nur wenn sichtbar,
+  // um Mobil-Datenverbrauch zu schonen. Zeigt bei Abweichung ein Banner; reißt
+  // KEINE laufende Eingabe ab (kein Auto-Reload), Lehrkraft entscheidet selbst.
+  useEffect(() => {
+    // Test-Hook: erlaubt E2E (Demo) das Banner ohne Netzwerk zu simulieren.
+    window.__krsSimulateUpdate = (v) => setUpdateVersion(v || 'vTEST');
+    if (mode !== 'produktiv') return;
+    let stopped = false;
+    const run = async () => {
+      if (document.visibilityState !== 'visible') return;
+      const remote = await fetchRemoteKrsVersion();
+      if (!stopped && remote && remote !== window.KRS_VERSION) setUpdateVersion(remote);
+    };
+    const t = setTimeout(run, 8000);            // kurz nach Start einmal prüfen
+    const iv = setInterval(run, 5 * 60 * 1000); // danach alle 5 Minuten
+    const onVis = () => { if (document.visibilityState === 'visible') run(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      stopped = true;
+      clearTimeout(t); clearInterval(iv);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [mode]);
+
   // Phasen-Wechsel im Produktiv-Modus in DB schreiben
   const handlePhaseChange = useCallback(async (newPhase) => {
     setPhase(newPhase);
@@ -2691,7 +2779,7 @@ function App() {
   // Norbert ist gleichzeitig Admin UND Lehrer für sein eigenes Projekt).
   const ALLOWED_SECTIONS = {
     super_admin: null, // null = alle erlaubt
-    projektleitung: new Set(['dashboard', 'projekte', 'anmeldungen', 'export', 'phase', 'feedback', 'alle-projekte']),
+    projektleitung: new Set(['dashboard', 'projekte', 'anmeldungen', 'export', 'phase', 'feedback', 'alle-projekte', 'statistik']),
     klassenlehrer: new Set(['meine-klasse', 'alle-projekte']),
     // v41: 'alle-projekte' = read-only Übersicht aller Projekte (gegen Dopplungen)
     projektlehrer: new Set(['mein-projekt', 'alle-projekte']),
@@ -2742,6 +2830,9 @@ function App() {
   const projekteCount = (mockProjekteData || []).length;
   const lehrerCount   = (mockLehrerData || []).length;
   const angemeldetCount = (mockSchueler || []).filter(s => s && s.hat_gewaehlt).length;
+  // v46: „gebucht" = selbst gewählt ODER vorab zugeordnet (fixiert). So zählen
+  // komplett vorab zugeordnete Klassen nicht mehr fälschlich als „offen".
+  const gebuchtCount = (mockSchueler || []).filter(istGebuchtS).length;
   const tauschOffenCount = (mockTauschData || []).filter(t => t && (t.status === 'offen' || !t.status)).length;
   const fmtCount = (n) => (n > 0 ? String(n) : null);
 
@@ -2758,12 +2849,14 @@ function App() {
     // v27/E1: "Meine Klasse" — nur sichtbar für klassenlehrer und super_admin (über ALLOWED_SECTIONS gefiltert)
     { section: 'meine-klasse', label: '📋 Meine Klasse', always: true },
     { type: 'divider', label: 'Ablauf' },
-    { section: 'anmeldungen', label: '📋 Anmeldungen', phases: ['anmeldung', 'verteilung', 'nachbearbeitung'], badge: schuelerCount > 0 ? `${angemeldetCount}/${schuelerCount}` : null, recommended: phase === 'anmeldung' },
+    { section: 'anmeldungen', label: '📋 Anmeldungen', phases: ['anmeldung', 'verteilung', 'nachbearbeitung'], badge: schuelerCount > 0 ? `${gebuchtCount}/${schuelerCount}` : null, recommended: phase === 'anmeldung' },
     { section: 'verteilung', label: '🎲 Verteilung', phases: ['verteilung', 'nachbearbeitung', 'projekttage'], recommended: phase === 'verteilung' },
     { section: 'zuteilungen', label: '🎯 Zuteilungen', phases: ['nachbearbeitung', 'projekttage'] },
     { section: 'umbuchung', label: '🔀 Manuelle Umbuchung', phases: ['nachbearbeitung', 'projekttage'] },
     { section: 'tauschwuensche', label: '🔄 Tauschwünsche', phases: ['nachbearbeitung'], badge: fmtCount(tauschOffenCount), badgeType: 'orange', recommended: phase === 'nachbearbeitung' },
     { section: 'export', label: '📥 Export & Aushang', phases: ['nachbearbeitung', 'projekttage'] },
+    // v46: Projekt-Statistik — Belegung/Beliebtheit der Projekte (Admin/Projektleitung)
+    { section: 'statistik', label: '📊 Statistik', always: true },
     { type: 'divider', label: 'System' },
     { section: 'phase', label: '⚙️ Phase wechseln', always: true },
     { section: 'einstellungen', label: '🛠️ Einstellungen', always: true },
@@ -2829,6 +2922,13 @@ function App() {
       </aside>
 
       <main class="main">
+        ${updateVersion && html`
+          <div class="update-banner" data-testid="update-banner" role="alert">
+            <span>🔄 Neue Version verfügbar (${updateVersion}). Bitte aktualisieren, damit du den neuesten Stand siehst.</span>
+            <button class="btn-reload" data-testid="update-reload" onClick=${() => location.reload()}>Jetzt aktualisieren</button>
+            <button class="btn-later" data-testid="update-later" onClick=${() => setUpdateVersion(null)}>Später</button>
+          </div>
+        `}
         <!-- Badges-Zeile oben rechts: Phase + Live/Demo nebeneinander, im Fluss (keine Überlappung mit Seiten-Buttons) -->
         <div class="topbar-badges">
           <${PhaseBadge} phase=${phase} navigate=${navigate} />
@@ -2853,6 +2953,7 @@ function App() {
         ${activeSection === 'export' && html`<${ExportView} />`}
         ${activeSection === 'phase' && html`<${PhaseView} phase=${phase} setPhase=${handlePhaseChange} />`}
         ${activeSection === 'einstellungen' && html`<${EinstellungenView} />`}
+        ${activeSection === 'statistik' && html`<${StatistikView} phase=${phase} refreshKey=${refreshKey} />`}
         ${activeSection === 'feedback' && html`<${FeedbackView} />`}
       </main>
 
@@ -2959,6 +3060,10 @@ function Dashboard({ phase, navigate, refreshKey }) {
   const angemeldetCount = (mockSchueler || []).filter(s => s && s.hat_gewaehlt).length;
   const tauschOffenCount = (mockTauschData || []).filter(t => t && (t.status === 'offen' || !t.status)).length;
   const prozentAngemeldet = schuelerCount ? Math.round((angemeldetCount / schuelerCount) * 100) : 0;
+  // v46: gebucht = gewählt + vorab zugeordnet. So zählen z.B. komplett vorab
+  // zugeordnete Klassen (5a) korrekt als „erledigt" statt als „nicht gewählt".
+  const st = zaehleStatus(mockSchueler);
+  const prozentGebucht = schuelerCount ? Math.round((st.gebucht / schuelerCount) * 100) : 0;
 
   const content = {
     setup: {
@@ -2973,7 +3078,7 @@ function Dashboard({ phase, navigate, refreshKey }) {
       title: 'Anmeldungs-Phase läuft',
       subtitle: 'Überwache die Anmeldungen und schließe die Phase, wenn genug Schüler sich angemeldet haben.',
       tiles: [
-        { label: 'Anmeldungen', value: `${angemeldetCount}/${schuelerCount}`, sub: `${prozentAngemeldet}%`, action: () => navigate('anmeldungen'), recommended: true },
+        { label: 'Gebucht', value: `${st.gebucht}/${schuelerCount}`, sub: `${st.gewaehlt} gewählt · ${st.zugeordnet} zugeordnet`, action: () => navigate('anmeldungen'), recommended: true },
       ]
     },
     verteilung: {
@@ -3028,14 +3133,19 @@ function Dashboard({ phase, navigate, refreshKey }) {
 
     <div class="card">
       <h2>📊 Schnelle Statistik</h2>
+      <div class="status-legend">
+        <span class="lg"><span class="dot dot-gewaehlt"></span>${st.gewaehlt} gewählt</span>
+        <span class="lg"><span class="dot dot-zugeordnet"></span>${st.zugeordnet} zugeordnet</span>
+        <span class="lg"><span class="dot dot-offen"></span>${st.offen} offen</span>
+      </div>
       <div class="stat-row">
-        <div class="stat-label">Angemeldet</div>
+        <div class="stat-label">Gebucht</div>
         <div class="stat-bar">
-          <div class=${"stat-bar-fill " + (prozentAngemeldet >= 95 ? 'w1' : prozentAngemeldet >= 80 ? 'w2' : 'w3')} style=${"width:" + prozentAngemeldet + "%"}>
-            ${angemeldetCount}/${schuelerCount}
+          <div class=${"stat-bar-fill " + (prozentGebucht >= 95 ? 'w1' : prozentGebucht >= 80 ? 'w2' : 'w3')} style=${"width:" + prozentGebucht + "%"}>
+            ${st.gebucht}/${schuelerCount}
           </div>
         </div>
-        <div class="stat-value">${prozentAngemeldet}%</div>
+        <div class="stat-value">${prozentGebucht}%</div>
       </div>
       <div class="stat-row">
         <div class="stat-label">Projekte</div>
@@ -3143,8 +3253,9 @@ function SchuelerView({ refreshKey, reload }) {
     // v40: Inaktive sind aus allen normalen Ansichten ausgeblendet.
     // Nur der Status-Filter "inaktiv" zeigt sie (ausgegraut).
     const matchFilter = filter === 'inaktiv' ? !aktiv
-      : filter === 'angemeldet' ? (aktiv && s.hat_gewaehlt)
-      : filter === 'fehlt' ? (aktiv && !s.hat_gewaehlt)
+      : filter === 'angemeldet' ? (aktiv && hatGewaehltS(s) && !istZugeordnetS(s))
+      : filter === 'zugeordnet' ? (aktiv && istZugeordnetS(s))
+      : filter === 'fehlt' ? (aktiv && !istGebuchtS(s)) // v46: zugeordnete gelten als gebucht, nicht als „fehlt"
       : aktiv; // 'alle' = nur aktive
     const matchKlasse = !klasseAktiv || (s.klasse && filterKlassen.has(String(s.klasse).toLowerCase()));
     return matchSearch && matchFilter && matchKlasse;
@@ -3681,8 +3792,9 @@ S002;Erika;Musterfrau;7b;7</pre>
           <label>Status</label>
           <select value=${filter} onChange=${e => setFilter(e.target.value)}>
             <option value="alle">Alle anzeigen</option>
-            <option value="angemeldet">Nur angemeldete</option>
-            <option value="fehlt">Noch nicht angemeldet</option>
+            <option value="angemeldet">✓ Nur selbst gewählte</option>
+            <option value="zugeordnet">📌 Nur vorab zugeordnete</option>
+            <option value="fehlt">⏳ Noch offen (weder gewählt noch zugeordnet)</option>
             <option value="inaktiv">🚫 Nur inaktive${inaktivCount ? ` (${inaktivCount})` : ''}</option>
           </select>
         </div>
@@ -3768,6 +3880,12 @@ S002;Erika;Musterfrau;7b;7</pre>
           </div>
         </div>
       `}
+    </div>
+
+    <div class="status-legend" style="padding:0 2px;">
+      <span class="lg"><span class="dot dot-gewaehlt"></span>✓ selbst gewählt</span>
+      <span class="lg"><span class="dot dot-zugeordnet"></span>📌 vorab zugeordnet</span>
+      <span class="lg"><span class="dot dot-offen"></span>⏳ noch offen</span>
     </div>
 
     <div class="table-wrapper">
@@ -4782,9 +4900,12 @@ function KlassenlehrerView({ refreshKey, currentDbUserId }) {
       .sort((a, b) => String(a.titel || '').localeCompare(String(b.titel || ''), 'de'));
   }, [refreshKey, localKey, klassenstufe]);
 
-  const angemeldet = schueler.filter(s => s.hat_gewaehlt).length;
-  const offen = schueler.length - angemeldet;
-  const prozent = schueler.length > 0 ? Math.round((angemeldet / schueler.length) * 100) : 0;
+  // v46: gebucht = selbst gewählt + vorab zugeordnet. Eine komplett vorab
+  // zugeordnete Klasse zeigt damit „N von N gebucht" statt fälschlich „0 von N".
+  const klStatus = zaehleStatus(schueler);
+  const gebucht = klStatus.gebucht;
+  const offen = klStatus.offen;
+  const prozent = klStatus.prozent;
 
   if (!lehrer) {
     return html`<div class="card"><div class="empty-state" style="padding:1rem;">Kein Klassenlehrer-Profil gefunden.</div></div>`;
@@ -4906,7 +5027,7 @@ function KlassenlehrerView({ refreshKey, currentDbUserId }) {
     <div class="main-header">
       <div>
         <h1 class="main-title">Meine Klasse — ${klasse.toUpperCase()}</h1>
-        <div class="main-subtitle">${angemeldet} von ${schueler.length} angemeldet (${prozent}%) · ${offen} offen</div>
+        <div class="main-subtitle">${gebucht} von ${schueler.length} gebucht (${prozent}%) · ${klStatus.gewaehlt} gewählt · ${klStatus.zugeordnet} zugeordnet · ${offen} offen</div>
       </div>
       ${offeneSchueler.length > 0 && html`
         <div class="btn-group">
@@ -4944,12 +5065,14 @@ function KlassenlehrerView({ refreshKey, currentDbUserId }) {
               const selected = zuteilungId(s.zuteilung);
               const isBusy = busyCode === s.code;
               return html`
-                <tr key=${s.code} data-testid="klassenlehrer-row" data-status=${s.hat_gewaehlt ? 'angemeldet' : 'offen'}>
+                <tr key=${s.code} data-testid="klassenlehrer-row" data-status=${istZugeordnetS(s) ? 'zugeordnet' : (s.hat_gewaehlt ? 'angemeldet' : 'offen')}>
                   <td><code>${s.code}</code></td>
                   <td>${s.nachname}</td>
                   <td>${s.vorname}</td>
                   <td>
-                    ${s.hat_gewaehlt
+                    ${istZugeordnetS(s)
+                      ? html`<span class="badge" style="background:var(--krs-blau);" title="Vorab fest zugeordnet — muss nicht selbst wählen">📌 Zugeordnet</span>`
+                      : s.hat_gewaehlt
                       ? html`<span class="badge badge-success">✓ Angemeldet</span>`
                       : html`<span class="badge">○ Offen</span>`}
                   </td>
@@ -5188,23 +5311,28 @@ function AnmeldungenView() {
     return () => { cancelled = true; };
   }, [service]);
 
-  const { klassenStatus, gesamt, angemeldet, prozentGesamt } = useMemo(() => {
+  // v46: Pro Klasse getrennt zählen — gewählt / vorab zugeordnet / offen.
+  // „gebucht" (= gewählt + zugeordnet) ist der Balken-Wert, damit eine komplett
+  // vorab zugeordnete Klasse (z.B. 5a) als erledigt erscheint, nicht als „fehlt".
+  const { klassenStatus, gesamtStatus } = useMemo(() => {
     const groups = new Map();
-    let ges = 0, ang = 0;
     for (const s of schueler) {
+      if (!istAktivS(s)) continue; // inaktive nehmen nicht an der Wahl teil
       const k = s.klasse || '?';
-      if (!groups.has(k)) groups.set(k, { klasse: k, schueler: 0, angemeldet: 0 });
+      if (!groups.has(k)) groups.set(k, { klasse: k, schueler: 0, gewaehlt: 0, zugeordnet: 0, offen: 0 });
       const g = groups.get(k);
       g.schueler += 1;
-      ges += 1;
-      // hat_gewaehlt kann als Spalte oder Status-Objekt vorliegen
-      const gewaehlt = !!(s.hat_gewaehlt || (s.status && s.status.hat_gewaehlt));
-      if (gewaehlt) { g.angemeldet += 1; ang += 1; }
+      if (istZugeordnetS(s)) g.zugeordnet += 1;
+      else if (hatGewaehltS(s)) g.gewaehlt += 1;
+      else g.offen += 1;
     }
-    const list = Array.from(groups.values()).sort((a, b) => String(a.klasse).localeCompare(String(b.klasse), 'de'));
-    const pg = ges > 0 ? Math.round((ang / ges) * 100) : 0;
-    return { klassenStatus: list, gesamt: ges, angemeldet: ang, prozentGesamt: pg };
+    const list = Array.from(groups.values())
+      .map(g => ({ ...g, gebucht: g.gewaehlt + g.zugeordnet }))
+      .sort((a, b) => String(a.klasse).localeCompare(String(b.klasse), 'de'));
+    return { klassenStatus: list, gesamtStatus: zaehleStatus(schueler) };
   }, [schueler]);
+  const gesamt = gesamtStatus.gesamt;
+  const prozentGesamt = gesamtStatus.prozent;
 
   if (loading) {
     return html`<div class="card"><div class="loading">Lade Anmelde-Status aus der Datenbank …</div></div>`;
@@ -5217,7 +5345,7 @@ function AnmeldungenView() {
     <div class="main-header">
       <div>
         <h1 class="main-title">Anmelde-Status</h1>
-        <div class="main-subtitle">${angemeldet} von ${gesamt} Schülern (${prozentGesamt}%)</div>
+        <div class="main-subtitle">${gesamtStatus.gebucht} von ${gesamt} gebucht (${prozentGesamt}%) · ${gesamtStatus.gewaehlt} gewählt · ${gesamtStatus.zugeordnet} zugeordnet</div>
       </div>
       <div class="btn-group">
         <button class="btn btn-secondary">📧 Erinnerung senden</button>
@@ -5227,22 +5355,26 @@ function AnmeldungenView() {
 
     <div class="card">
       <h2>📊 Anmelde-Status pro Klasse</h2>
+      <div class="status-legend">
+        <span class="lg"><span class="dot dot-gewaehlt"></span>selbst gewählt</span>
+        <span class="lg"><span class="dot dot-zugeordnet"></span>vorab zugeordnet</span>
+        <span class="lg"><span class="dot dot-offen"></span>noch offen</span>
+      </div>
       ${klassenStatus.length === 0 ? html`
         <div class="empty-state" style="padding:1rem; color:var(--muted);">
           Noch keine Schüler in der Datenbank. Erst CSV-Import durchführen, dann erscheint hier der Anmelde-Status.
         </div>
       ` : klassenStatus.map(k => {
-        const prozent = k.schueler > 0 ? Math.round((k.angemeldet / k.schueler) * 100) : 0;
-        const fehlt = k.schueler - k.angemeldet;
+        const prozent = k.schueler > 0 ? Math.round((k.gebucht / k.schueler) * 100) : 0;
         return html`
           <div class="stat-row">
             <div class="stat-label">Klasse ${k.klasse}</div>
-            <div class="stat-bar">
+            <div class="stat-bar" title=${`${k.gewaehlt} gewählt · ${k.zugeordnet} zugeordnet · ${k.offen} offen`}>
               <div class=${"stat-bar-fill " + (prozent >= 95 ? 'w1' : prozent >= 80 ? 'w2' : 'w3')} style=${"width:" + Math.max(prozent, 3) + "%"}>
-                ${k.angemeldet}/${k.schueler}
+                ${k.gebucht}/${k.schueler}
               </div>
             </div>
-            <div class="stat-value">${fehlt > 0 ? `${fehlt} fehlen` : '✓'}</div>
+            <div class="stat-value">${k.offen > 0 ? `${k.offen} offen` : '✓'}</div>
           </div>
         `;
       })}
@@ -5251,6 +5383,96 @@ function AnmeldungenView() {
     <div class="alert alert-info">
       <strong>💡 Nächster Schritt:</strong> Wenn alle angemeldet sind (oder nach Deadline), kannst du die Anmeldung schließen und die Verteilung starten.
     </div>
+  `;
+}
+
+// === STATISTIK (v46) ===
+// Projekt-Beliebtheit / Belegung — rein clientseitig aus mockSchueler +
+// mockProjekteData. belegt = #(zuteilung === p.id); davon „zugeordnet" (fixiert)
+// vs. „gewählt". Wahlqualität aus wahl_nr (nach der Verlosung). Erstwunsch-
+// „Interesse" nur, falls Wunsch-Daten (s.wahlen) vorliegen — sonst ausgeblendet,
+// damit KEINE DB-Migration erzwungen wird.
+function StatistikView({ phase, refreshKey }) {
+  const daten = useMemo(() => {
+    const schueler = (mockSchueler || []).filter(istAktivS);
+    const projekte = (mockProjekteData || []);
+    const wunschGesamt = schueler.reduce((n, s) => n + (s.wahlen && s.wahlen.erstwahl_id ? 1 : 0), 0);
+    const rows = projekte.map(p => {
+      const zug = schueler.filter(s => s.zuteilung === p.id);
+      const zugeordnet = zug.filter(istZugeordnetS).length;
+      const gewaehlt = zug.length - zugeordnet;
+      const w = { 1: 0, 2: 0, 3: 0 };
+      zug.forEach(s => { if (s.wahl_nr === 1 || s.wahl_nr === 2 || s.wahl_nr === 3) w[s.wahl_nr]++; });
+      const erstwunsch = schueler.filter(s => s.wahlen && s.wahlen.erstwahl_id === p.id).length;
+      const wunsch = schueler.filter(s => s.wahlen && (s.wahlen.erstwahl_id === p.id || s.wahlen.zweitwahl_id === p.id || s.wahlen.drittwahl_id === p.id)).length;
+      const max = p.max_plaetze || 0;
+      return { id: p.id, titel: p.titel || '(ohne Titel)', status: p.status, max, belegt: zug.length, gewaehlt, zugeordnet, w, erstwunsch, wunsch,
+               auslastung: max > 0 ? Math.round((zug.length / max) * 100) : 0 };
+    });
+    return { rows, wunschGesamt };
+  }, [refreshKey]);
+
+  const hatWunschDaten = daten.wunschGesamt > 0;
+  const sorted = [...daten.rows].sort((a, b) => hatWunschDaten
+    ? (b.erstwunsch - a.erstwunsch) || (b.belegt - a.belegt)
+    : (b.belegt - a.belegt) || (b.auslastung - a.auslastung));
+  const totalBelegt = daten.rows.reduce((n, r) => n + r.belegt, 0);
+  const totalZugeordnet = daten.rows.reduce((n, r) => n + r.zugeordnet, 0);
+  const hatQualitaet = daten.rows.some(r => (r.w[1] + r.w[2] + r.w[3]) > 0);
+
+  return html`
+    <div class="main-header">
+      <div>
+        <h1 class="main-title">📊 Projekt-Statistik</h1>
+        <div class="main-subtitle">${daten.rows.length} Projekte · ${totalBelegt} Plätze belegt · ${totalZugeordnet} vorab zugeordnet</div>
+      </div>
+    </div>
+    ${daten.rows.length === 0 ? html`
+      <div class="card"><div class="empty-state" style="padding:1rem;">Noch keine Projekte angelegt.</div></div>
+    ` : html`
+      <div class="card" data-testid="statistik-view">
+        <h2>${hatWunschDaten ? '🏆 Beliebteste Projekte (Erstwunsch)' : '📈 Belegung der Projekte'}</h2>
+        <p style="font-size:13px;color:var(--text-muted);margin-top:0;">
+          ${hatWunschDaten
+            ? 'Sortiert nach Erstwunsch-Interesse. „Belegt" = endgültige Zuteilung nach der Verlosung.'
+            : 'Sortiert nach Belegung (selbst gewählt + vorab zugeordnet). Die ausführliche Erstwunsch-Auswertung liefert der Probelauf im Verteilung-Tab.'}
+        </p>
+        <div class="status-legend">
+          <span class="lg"><span class="dot dot-gewaehlt"></span>gewählt</span>
+          <span class="lg"><span class="dot dot-zugeordnet"></span>📌 vorab zugeordnet</span>
+        </div>
+        ${sorted.map(r => html`
+          <div class="stat-row" key=${r.id} data-testid="statistik-row"
+               title=${`${r.gewaehlt} gewählt · ${r.zugeordnet} zugeordnet` + (hatWunschDaten ? ` · ${r.erstwunsch} Erstwunsch · ${r.wunsch} Wunsch gesamt` : '')}>
+            <div class="stat-label" style="width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.titel}${r.status === 'entwurf' ? ' ⚠️' : ''}</div>
+            <div class="stat-bar">
+              <div class=${"stat-bar-fill " + (r.auslastung >= 95 ? 'w1' : r.auslastung >= 60 ? 'w2' : 'w3')}
+                   style=${"width:" + Math.max(r.max > 0 ? r.auslastung : (r.belegt > 0 ? 100 : 0), 3) + "%"}>
+                ${r.belegt}${r.max > 0 ? '/' + r.max : ''}${r.zugeordnet > 0 ? ` · 📌 ${r.zugeordnet}` : ''}
+              </div>
+            </div>
+            <div class="stat-value">${hatWunschDaten ? r.erstwunsch + ' ★' : (r.max > 0 ? r.auslastung + '%' : '—')}</div>
+          </div>
+        `)}
+      </div>
+    `}
+    ${hatQualitaet && html`
+      <div class="card">
+        <h2>🎯 Zuteilungs-Qualität</h2>
+        <p style="font-size:13px;color:var(--text-muted);margin-top:0;">Wie viele Schüler ihren Erst-/Zweit-/Drittwunsch bekommen haben.</p>
+        ${(() => {
+          const t = daten.rows.reduce((a, r) => ({ 1: a[1] + r.w[1], 2: a[2] + r.w[2], 3: a[3] + r.w[3] }), { 1: 0, 2: 0, 3: 0 });
+          const ges = (t[1] + t[2] + t[3]) || 1;
+          const row = (label, val, cls) => html`
+            <div class="stat-row">
+              <div class="stat-label">${label}</div>
+              <div class="stat-bar"><div class=${"stat-bar-fill " + cls} style=${"width:" + Math.max(Math.round(val / ges * 100), 3) + "%"}>${val}</div></div>
+              <div class="stat-value">${Math.round(val / ges * 100)}%</div>
+            </div>`;
+          return html`${row('Erstwunsch', t[1], 'w1')}${row('Zweitwunsch', t[2], 'w2')}${row('Drittwunsch', t[3], 'w3')}`;
+        })()}
+      </div>
+    `}
   `;
 }
 
