@@ -1090,7 +1090,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v44';
+  window.KRS_VERSION = 'v45';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -2793,14 +2793,22 @@ function App() {
         </div>
         <div class="sidebar-phase">📅 ${phaseLabels[phase]}</div>
         <nav class="sidebar-nav">
-          ${navItems.map(item => {
+          ${navItems.map((item, idx) => {
+            // Einzel-Item sichtbar? (Phase + Rolle)
+            const itemVisible = (it) => {
+              if (!it || it.type === 'divider') return false;
+              const phaseOk = it.always || (it.phases && it.phases.includes(phase));
+              return phaseOk && isAllowed(it.section);
+            };
             if (item.type === 'divider') {
-              return html`<div class="nav-section">${item.label}</div>`;
+              // Überschrift nur zeigen, wenn mind. ein Folge-Eintrag bis zum nächsten Divider sichtbar ist
+              let anyVisible = false;
+              for (let j = idx + 1; j < navItems.length && navItems[j].type !== 'divider'; j++) {
+                if (itemVisible(navItems[j])) { anyVisible = true; break; }
+              }
+              return anyVisible ? html`<div class="nav-section">${item.label}</div>` : null;
             }
-            const visible = item.always || (item.phases && item.phases.includes(phase));
-            if (!visible) return null;
-            // Task #1: Rollen-Filter
-            if (!isAllowed(item.section)) return null;
+            if (!itemVisible(item)) return null;
             const isActive = activeSection === item.section;
             return html`
               <div class=${"nav-item " + (isActive ? "active " : "") + (item.recommended ? "recommended" : "")}
