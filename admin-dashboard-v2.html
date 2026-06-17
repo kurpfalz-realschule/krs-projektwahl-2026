@@ -38,6 +38,9 @@ body{background:var(--bg);color:var(--text);line-height:1.55;min-height:100vh}
 .sidebar-subtitle{font-size:11px;opacity:0.6;margin-top:2px}
 .sidebar-phase{margin:16px 20px;padding:8px 12px;background:rgba(245,179,53,0.2);border-radius:6px;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;color:var(--krs-gelb)}
 .sidebar-nav{padding:10px 0}
+.sidebar-footer{padding:14px 20px 20px;margin-top:8px;border-top:1px solid rgba(255,255,255,0.1)}
+.sidebar-logout{width:100%;padding:10px 14px;background:rgba(255,255,255,0.06);color:#fff;border:1px solid rgba(255,255,255,0.18);border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all var(--transition)}
+.sidebar-logout:hover{background:rgba(224,49,49,0.85);border-color:rgba(224,49,49,0.9)}
 .nav-section{padding:6px 20px;font-size:10px;text-transform:uppercase;letter-spacing:0.8px;opacity:0.5;margin-top:16px;font-weight:700}
 .nav-item{padding:10px 20px;cursor:pointer;font-size:14px;display:flex;align-items:center;gap:10px;transition:all var(--transition);border-left:3px solid transparent}
 .nav-item:hover{background:rgba(255,255,255,0.05)}
@@ -2703,6 +2706,26 @@ function App() {
     setSidebarOpen(false);
   };
 
+  // Lehrer-Logout: deckt Demo- und Produktiv-Modus ab.
+  const handleLogout = async () => {
+    if (!window.confirm('Wirklich abmelden?')) return;
+    try {
+      if (window.KRS_MODE === 'produktiv' && window.KrsDataService) {
+        const svc = new window.KrsDataService();
+        await svc.logout(); // löst SIGNED_OUT → reload aus
+        // Fallback, falls das Auth-Event nicht feuert:
+        setTimeout(() => window.location.reload(), 400);
+      } else {
+        // Demo-Modus: Session-Flag löschen und neu laden
+        sessionStorage.removeItem('krs_admin_auth');
+        window.location.reload();
+      }
+    } catch (e) {
+      console.error('[KRS-Logout]', e);
+      window.location.reload();
+    }
+  };
+
   const phaseLabels = {
     setup: 'Setup-Phase',
     anmeldung: 'Anmeldung läuft',
@@ -2790,6 +2813,11 @@ function App() {
             `;
           })}
         </nav>
+        <div class="sidebar-footer">
+          <button class="sidebar-logout" onClick=${handleLogout} title="Vom Dashboard abmelden">
+            🚪 Abmelden
+          </button>
+        </div>
       </aside>
 
       <main class="main">
