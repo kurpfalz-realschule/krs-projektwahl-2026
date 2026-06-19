@@ -558,6 +558,40 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
       if (error) throw new Error('listSchueler: ' + error.message);
       return data || [];
     }
+    // v47: Aggregierte Wahl-Statistik pro Projekt (wie oft als Erst-/Zweit-/
+    // Drittwahl gewählt). Liefert [{ projekt_id, erstwahl, zweitwahl, drittwahl, gesamt }].
+    // Demo:      clientseitig aus window.mockSchueler[*].wahlen.
+    // Produktiv: read-only RPC admin_projekt_wahl_statistik() (nur Aggregate,
+    //            keine personenbezogenen Einzelwahlen → DSGVO-freundlich).
+    async projektWahlStatistik() {
+      if (this.isDemo) {
+        const list = (typeof window !== 'undefined' && window.mockSchueler) || [];
+        const acc = {};
+        const bump = (id, key) => {
+          if (!id) return;
+          (acc[id] ||= { projekt_id: id, erstwahl: 0, zweitwahl: 0, drittwahl: 0, gesamt: 0 });
+          acc[id][key]++; acc[id].gesamt++;
+        };
+        list.forEach(s => {
+          if (s && s.aktiv === false) return;
+          const w = s && s.wahlen;
+          if (!w) return;
+          bump(w.erstwahl_id, 'erstwahl');
+          bump(w.zweitwahl_id, 'zweitwahl');
+          bump(w.drittwahl_id, 'drittwahl');
+        });
+        return Object.values(acc);
+      }
+      const { data, error } = await this.client.rpc('admin_projekt_wahl_statistik');
+      if (error) throw new Error('projektWahlStatistik: ' + error.message);
+      return (data || []).map(r => ({
+        projekt_id: r.projekt_id,
+        erstwahl:  Number(r.erstwahl)  || 0,
+        zweitwahl: Number(r.zweitwahl) || 0,
+        drittwahl: Number(r.drittwahl) || 0,
+        gesamt:    Number(r.gesamt)    || 0
+      }));
+    }
     // v40: Schüler aktiv/inaktiv schalten. Inaktiv = von Wahl + Verlosung
     // ausgeschlossen; Wahl/Zuteilung werden serverseitig gelöscht.
     async setSchuelerAktiv({ code, aktiv }) {
@@ -1104,7 +1138,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v46';
+  window.KRS_VERSION = 'v47';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -2318,11 +2352,11 @@ const MOCK_STATS = {
 // Globale Mock-Daten (können sich durch User-Aktionen ändern)
 let mockSchueler = [
   { "code": "5A-DEMO1", "vorname": "Max", "nachname": "Mustermann", "klasse": "5a", "klassenstufe": 5, "hat_gewaehlt": false, "zuteilung": null, "aktiv": true },
-  { "code": "6B-DEMO2", "vorname": "Lisa", "nachname": "Musterfrau", "klasse": "6b", "klassenstufe": 6, "hat_gewaehlt": true, "zuteilung": null, "aktiv": true },
+  { "code": "6B-DEMO2", "vorname": "Lisa", "nachname": "Musterfrau", "klasse": "6b", "klassenstufe": 6, "hat_gewaehlt": true, "zuteilung": null, "aktiv": true, "wahlen": { "erstwahl_id": "p2", "zweitwahl_id": "p4", "drittwahl_id": "p5" } },
   { "code": "7C-DEMO3", "vorname": "Tom", "nachname": "Beispiel", "klasse": "7c", "klassenstufe": 7, "hat_gewaehlt": false, "zuteilung": null, "aktiv": true },
-  { "code": "8A-DEMO4", "vorname": "Anna", "nachname": "Demo", "klasse": "8a", "klassenstufe": 8, "hat_gewaehlt": true, "zuteilung": null, "aktiv": true },
+  { "code": "8A-DEMO4", "vorname": "Anna", "nachname": "Demo", "klasse": "8a", "klassenstufe": 8, "hat_gewaehlt": true, "zuteilung": null, "aktiv": true, "wahlen": { "erstwahl_id": "p1", "zweitwahl_id": "p5", "drittwahl_id": "p2" } },
   { "code": "9D-DEMO5", "vorname": "Ben", "nachname": "Test", "klasse": "9d", "klassenstufe": 9, "hat_gewaehlt": false, "zuteilung": null, "aktiv": true },
-  { "code": "10B-DEMO6", "vorname": "Mia", "nachname": "Probe", "klasse": "10b", "klassenstufe": 10, "hat_gewaehlt": true, "zuteilung": null, "aktiv": true }
+  { "code": "10B-DEMO6", "vorname": "Mia", "nachname": "Probe", "klasse": "10b", "klassenstufe": 10, "hat_gewaehlt": true, "zuteilung": null, "aktiv": true, "wahlen": { "erstwahl_id": "p3", "zweitwahl_id": "p1", "drittwahl_id": "p4" } }
 ];
 let mockLehrerData = [...MOCK_LEHRER];
 let mockProjekteData = [...MOCK_PROJEKTE_ADMIN];
@@ -5393,6 +5427,25 @@ function AnmeldungenView() {
 // „Interesse" nur, falls Wunsch-Daten (s.wahlen) vorliegen — sonst ausgeblendet,
 // damit KEINE DB-Migration erzwungen wird.
 function StatistikView({ phase, refreshKey }) {
+  // v47: aggregierte Wahl-Statistik (Erst-/Zweit-/Drittwahl pro Projekt).
+  // Demo: aus mockSchueler.wahlen · Produktiv: read-only RPC.
+  // null = lädt noch, [] = keine Wahlen, [...] = Daten.
+  const service = useMemo(() => new window.KrsDataService(), []);
+  const [wahlStat, setWahlStat] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const rows = await service.projektWahlStatistik();
+        if (alive) setWahlStat(Array.isArray(rows) ? rows : []);
+      } catch (e) {
+        console.warn('[KRS] projektWahlStatistik:', e);
+        if (alive) setWahlStat([]);
+      }
+    })();
+    return () => { alive = false; };
+  }, [service, refreshKey]);
+
   const daten = useMemo(() => {
     const schueler = (mockSchueler || []).filter(istAktivS);
     const projekte = (mockProjekteData || []);
@@ -5420,6 +5473,24 @@ function StatistikView({ phase, refreshKey }) {
   const totalZugeordnet = daten.rows.reduce((n, r) => n + r.zugeordnet, 0);
   const hatQualitaet = daten.rows.some(r => (r.w[1] + r.w[2] + r.w[3]) > 0);
 
+  // v47: Wahl-Statistik — Projekte mit aggregierten Wunsch-Zahlen verbinden,
+  // nach Erstwunsch-Beliebtheit sortiert.
+  const wahlRows = useMemo(() => {
+    const byId = {};
+    (wahlStat || []).forEach(r => { byId[r.projekt_id] = r; });
+    return (mockProjekteData || []).map(p => {
+      const r = byId[p.id] || {};
+      return {
+        id: p.id, titel: p.titel || '(ohne Titel)', status: p.status,
+        erstwahl: r.erstwahl || 0, zweitwahl: r.zweitwahl || 0,
+        drittwahl: r.drittwahl || 0, gesamt: r.gesamt || 0
+      };
+    }).sort((a, b) => (b.erstwahl - a.erstwahl) || (b.gesamt - a.gesamt));
+  }, [wahlStat, refreshKey]);
+  const wahlGeladen = wahlStat !== null;
+  const wahlSumme = wahlRows.reduce((n, r) => n + r.gesamt, 0);
+  const maxErst = wahlRows.reduce((m, r) => Math.max(m, r.erstwahl), 0);
+
   return html`
     <div class="main-header">
       <div>
@@ -5427,6 +5498,41 @@ function StatistikView({ phase, refreshKey }) {
         <div class="main-subtitle">${daten.rows.length} Projekte · ${totalBelegt} Plätze belegt · ${totalZugeordnet} vorab zugeordnet</div>
       </div>
     </div>
+    ${(() => {
+      // v47: Wahl-Statistik — was die Schüler:innen tatsächlich gewählt haben.
+      if (!wahlGeladen) return html`
+        <div class="card"><div class="empty-state" style="padding:1rem;">Lade Wahl-Statistik …</div></div>`;
+      if (wahlSumme === 0) return html`
+        <div class="card" data-testid="wahl-statistik">
+          <h2>🗳️ Wahl-Statistik</h2>
+          <div class="empty-state" style="padding:1rem;">Noch keine Wahlen abgegeben. Sobald Schüler:innen ihre drei Wünsche eintragen, siehst du hier, welches Projekt wie oft gewählt wurde.</div>
+        </div>`;
+      return html`
+        <div class="card" data-testid="wahl-statistik">
+          <h2>🗳️ Wahl-Statistik — wie oft wurde jedes Projekt gewählt</h2>
+          <p style="font-size:13px;color:var(--text-muted);margin-top:0;">
+            Aggregierte Wünsche aller aktiven Schüler:innen (Erst-/Zweit-/Drittwahl), <strong>unabhängig von der Verlosung</strong>. Sortiert nach Erstwunsch-Beliebtheit · Balken = Erstwahl-Stimmen.
+          </p>
+          <div class="status-legend">
+            <span class="lg"><span class="dot" style="background:var(--krs-blau)"></span>★ Erstwahl (Balken)</span>
+            <span class="lg">② Zweitwahl · ③ Drittwahl als Zusatzzahlen</span>
+          </div>
+          ${wahlRows.map(r => html`
+            <div class="stat-row" key=${r.id} data-testid="wahl-statistik-row"
+                 title=${`${r.erstwahl}× Erstwahl · ${r.zweitwahl}× Zweitwahl · ${r.drittwahl}× Drittwahl · ${r.gesamt} Nennungen gesamt`}>
+              <div class="stat-label" style="width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.titel}${r.status === 'entwurf' ? ' ⚠️' : ''}</div>
+              <div class="stat-bar">
+                <div class="stat-bar-fill w1"
+                     style=${"width:" + (r.erstwahl > 0 ? Math.max(maxErst > 0 ? Math.round(r.erstwahl / maxErst * 100) : 0, 8) : 0) + "%"}>
+                  ${r.erstwahl > 0 ? r.erstwahl : ''}
+                </div>
+              </div>
+              <div class="stat-value" style="width:auto;min-width:130px;white-space:nowrap;">★ ${r.erstwahl} · ② ${r.zweitwahl} · ③ ${r.drittwahl}</div>
+            </div>
+          `)}
+          <p style="font-size:12px;color:var(--text-muted);margin-top:.75rem;margin-bottom:0;">Gesamt ${wahlSumme} Nennungen über ${wahlRows.filter(r => r.gesamt > 0).length} Projekte. ★ Erstwahl wird in der Verlosung priorisiert.</p>
+        </div>`;
+    })()}
     ${daten.rows.length === 0 ? html`
       <div class="card"><div class="empty-state" style="padding:1rem;">Noch keine Projekte angelegt.</div></div>
     ` : html`
