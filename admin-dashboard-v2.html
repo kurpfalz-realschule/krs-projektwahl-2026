@@ -592,6 +592,38 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
         gesamt:    Number(r.gesamt)    || 0
       }));
     }
+    // v48: Wünsche EINES Schülers (1./2./3. Wahl mit Projekttitel) — für das
+    // Wünsche-Popover in der Zuteilungen-View. On-demand pro Klick, damit
+    // loadAll/Normalizer unangetastet bleiben und kein Massen-Payload entsteht.
+    // Demo:      aus window.mockSchueler[code].wahlen + window.mockProjekteData.
+    // Produktiv: read-only RPC admin_schueler_wahlen(p_code) (is_app_user-Gate).
+    async schuelerWahlen({ code }) {
+      const cleanCode = String(code || '').toUpperCase().trim();
+      if (!cleanCode) return [];
+      if (this.isDemo) {
+        const list = (typeof window !== 'undefined' && window.mockSchueler) || [];
+        const s = list.find(x => String(x.code || '').toUpperCase() === cleanCode);
+        const w = s && s.wahlen;
+        if (!w) return [];
+        const projekte = (typeof window !== 'undefined' && window.mockProjekteData) || [];
+        const titel = (id) => {
+          const p = projekte.find(pp => pp.id === id);
+          return p ? p.titel : null;
+        };
+        return [
+          { wahl_nr: 1, projekt_id: w.erstwahl_id  || null, projekt_titel: titel(w.erstwahl_id) },
+          { wahl_nr: 2, projekt_id: w.zweitwahl_id || null, projekt_titel: titel(w.zweitwahl_id) },
+          { wahl_nr: 3, projekt_id: w.drittwahl_id || null, projekt_titel: titel(w.drittwahl_id) }
+        ].filter(r => r.projekt_id);
+      }
+      const { data, error } = await this.client.rpc('admin_schueler_wahlen', { p_code: cleanCode });
+      if (error) throw new Error('schuelerWahlen: ' + error.message);
+      return (data || []).map(r => ({
+        wahl_nr: Number(r.wahl_nr) || 0,
+        projekt_id: r.projekt_id,
+        projekt_titel: r.projekt_titel || null
+      }));
+    }
     // v40: Schüler aktiv/inaktiv schalten. Inaktiv = von Wahl + Verlosung
     // ausgeschlossen; Wahl/Zuteilung werden serverseitig gelöscht.
     async setSchuelerAktiv({ code, aktiv }) {
@@ -1138,7 +1170,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v47';
+  window.KRS_VERSION = 'v48';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -6056,6 +6088,48 @@ function ZuteilungenView({ setModal, refreshKey, reload }) {
     return out;
   }, [zuteilungen]);
 
+  // v48: Wünsche-Popover — zeigt die 1./2./3. Wahl des Schülers, zugeteiltes
+  // Projekt markiert. Daten on-demand per service.schuelerWahlen (kein loadAll-Eingriff).
+  const openWuensche = async (z) => {
+    let rows = [];
+    try {
+      rows = await service.schuelerWahlen({ code: z.schueler_code });
+    } catch (err) {
+      showToast('Wünsche konnten nicht geladen werden: ' + (err.message || err), 'error');
+      return;
+    }
+    const zugeteiltIstWunsch = rows.some(r => r.projekt_id && r.projekt_id === z.projekt_id);
+    setModal(html`
+      <div class="modal-overlay" onClick=${() => setModal(null)}>
+        <div class="modal-content" data-testid="wahlen-popover" onClick=${e => e.stopPropagation()}>
+          <button class="modal-close" onClick=${() => setModal(null)} aria-label="Schließen" title="Schließen (ESC)">×</button>
+          <h2>🎯 Wünsche: ${z.vorname} ${z.nachname}</h2>
+          <p><small><code>${z.schueler_code}</code> · ${z.klasse} · zugeteilt: <strong>${z.projekt_titel}</strong></small></p>
+          ${rows.length === 0 ? html`
+            <div class="alert alert-info">Keine Wahlen abgegeben — die Zuteilung erfolgte manuell.</div>
+          ` : html`
+            <div>
+              ${rows.map(r => html`
+                <div data-testid="wahlen-popover-row" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;">
+                  ${r.wahl_nr === 1 ? html`<span class="pill pill-success">1.</span>` :
+                    r.wahl_nr === 2 ? html`<span class="pill pill-info">2.</span>` :
+                    html`<span class="pill pill-warning">3.</span>`}
+                  <span style="flex:1;">${r.projekt_titel || '(Projekt gelöscht)'}</span>
+                  ${r.projekt_id === z.projekt_id ? html`<span class="pill pill-success">✓ zugeteilt</span>` : null}
+                </div>
+              `)}
+              ${!zugeteiltIstWunsch && html`
+                <div class="alert alert-warning" style="margin-top:6px;">
+                  Das zugeteilte Projekt war <strong>keiner</strong> der drei Wünsche (manuelle Zuteilung/Umbuchung).
+                </div>
+              `}
+            </div>
+          `}
+        </div>
+      </div>
+    `);
+  };
+
   // Umbuchen-Modal: zeigt aktuelle Zuteilung + Auswahl Zielprojekt + Begründung
   const openUmbuchen = (z) => {
     let neuesProjekt = null;
@@ -6188,10 +6262,15 @@ function ZuteilungenView({ setModal, refreshKey, reload }) {
                 <td>${z.klasse}</td>
                 <td>${z.projekt_titel}</td>
                 <td>
-                  ${z.wahl_nr === 1 ? html`<span class="pill pill-success">1.</span>` :
-                    z.wahl_nr === 2 ? html`<span class="pill pill-info">2.</span>` :
-                    z.wahl_nr === 3 ? html`<span class="pill pill-warning">3.</span>` :
-                    html`<span class="pill">manuell</span>`}
+                  <button data-testid="wahl-popover-btn" title="Wünsche des Schülers anzeigen" aria-label="Wünsche anzeigen"
+                          style="background:none;border:none;padding:0;cursor:pointer;font:inherit;display:inline-flex;align-items:center;gap:4px;"
+                          onClick=${() => openWuensche(z)}>
+                    ${z.wahl_nr === 1 ? html`<span class="pill pill-success">1.</span>` :
+                      z.wahl_nr === 2 ? html`<span class="pill pill-info">2.</span>` :
+                      z.wahl_nr === 3 ? html`<span class="pill pill-warning">3.</span>` :
+                      html`<span class="pill">manuell</span>`}
+                    <span style="color:var(--text-muted);font-size:11px;">▾</span>
+                  </button>
                 </td>
                 <td>
                   <button class="btn btn-ghost btn-small" onClick=${() => openUmbuchen(z)} disabled=${isDemo}>
