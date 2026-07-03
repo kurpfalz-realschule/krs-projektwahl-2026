@@ -1205,7 +1205,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v48';
+  window.KRS_VERSION = 'v48.3';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -6214,6 +6214,35 @@ function ZuteilungenView({ setModal, refreshKey, reload }) {
     return out;
   }, [zuteilungen]);
 
+  // v48.3: Wunsch-Pool — wenn der Projekt-Filter gesetzt ist: alle aktiven
+  // Schüler:innen, die DIESES Projekt als 1./2./3. Wunsch gewählt haben, inkl.
+  // ihrer aktuellen Zuteilung → Umbuchungs-Kandidaten auf einen Blick.
+  // Read-only; nutzt die v48-RPC admin_projekt_wahl_namen bzw. den Demo-Mock.
+  const poolProjekt = useMemo(() => {
+    if (!filterProjekt) return null;
+    return (mockProjekteData || []).find(p => p.titel === filterProjekt) || null;
+  }, [filterProjekt, refreshKey]);
+  const [poolRows, setPoolRows] = useState(null);
+  const [poolLaedt, setPoolLaedt] = useState(false);
+  const [poolFehler, setPoolFehler] = useState(null);
+  useEffect(() => {
+    if (!poolProjekt) { setPoolRows(null); setPoolFehler(null); return; }
+    let alive = true;
+    setPoolLaedt(true); setPoolFehler(null);
+    (async () => {
+      try {
+        const rows = await service.projektWahlNamen(poolProjekt.id);
+        if (alive) setPoolRows(Array.isArray(rows) ? rows : []);
+      } catch (e) {
+        console.warn('[KRS] wunschPool:', e);
+        if (alive) { setPoolRows([]); setPoolFehler(e.message || 'Laden fehlgeschlagen'); }
+      } finally {
+        if (alive) setPoolLaedt(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [service, poolProjekt, refreshKey]);
+
   // v48: Wünsche-Popover — zeigt die 1./2./3. Wahl des Schülers, zugeteiltes
   // Projekt markiert. Daten on-demand per service.schuelerWahlen (kein loadAll-Eingriff).
   const openWuensche = async (z) => {
@@ -6367,6 +6396,56 @@ function ZuteilungenView({ setModal, refreshKey, reload }) {
       </div>
 
       <p><small>${gefiltert.length} von ${zuteilungen.length} angezeigt</small></p>
+      ${poolProjekt && (() => {
+        // v48.3: Wunsch-Pool-Panel (read-only)
+        const byCode = new Map(zuteilungen.map(z => [z.schueler_code, z]));
+        const sortRows = (rows) => [...rows].sort((a, b) =>
+          String(a.klasse || '').localeCompare(String(b.klasse || ''), 'de')
+          || String(a.nachname || '').localeCompare(String(b.nachname || ''), 'de'));
+        const grp = (prio) => sortRows((poolRows || []).filter(r => r.prioritaet === prio));
+        const statusPill = (r) => {
+          const zu = byCode.get(r.code);
+          if (zu && zu.projekt_id === poolProjekt.id) return html`<span class="pill pill-success" style="font-size:11px;">✓ hier</span>`;
+          if (zu) return html`<span class="pill" style="font-size:11px;" title=${'aktuell: ' + zu.projekt_titel}>→ ${zu.projekt_titel}</span>`;
+          return html`<span class="pill pill-warning" style="font-size:11px;">ohne Zuteilung</span>`;
+        };
+        const hier = (poolRows || []).filter(r => { const zu = byCode.get(r.code); return zu && zu.projekt_id === poolProjekt.id; }).length;
+        const spalte = (prio, label) => {
+          const rows = grp(prio);
+          return html`
+            <div data-testid=${"wunsch-pool-spalte-" + prio}>
+              <div style="font-weight:600;margin-bottom:.4rem;">${label}
+                <span style="color:var(--text-muted);font-weight:400;"> (${rows.length})</span>
+              </div>
+              ${rows.length === 0
+                ? html`<div style="color:var(--text-muted);font-size:13px;">—</div>`
+                : html`<ul style="list-style:none;margin:0;padding:0;font-size:13px;line-height:2;">
+                    ${rows.map(r => html`<li key=${r.code}><strong>${r.klasse}</strong> · ${r.vorname} ${r.nachname} ${statusPill(r)}</li>`)}
+                  </ul>`}
+            </div>`;
+        };
+        return html`
+          <div data-testid="wunsch-pool-card" style="border:1px solid var(--border);border-radius:10px;padding:1rem;margin:0 0 1rem;background:rgba(74,106,131,.05);">
+            <div style="font-weight:600;margin-bottom:.25rem;">💡 Wunsch-Pool: ${poolProjekt.titel}</div>
+            <p style="font-size:12.5px;color:var(--text-muted);margin:0 0 .75rem;">
+              Alle aktiven Schüler:innen, die dieses Projekt als 1./2./3. Wunsch gewählt haben —
+              inkl. aktueller Zuteilung. Kandidaten für Umbuchungen hierher.
+            </p>
+            ${poolLaedt
+              ? html`<div style="color:var(--text-muted);">Lade Wunsch-Pool …</div>`
+              : poolFehler
+                ? html`<div style="color:var(--error);">Fehler: ${poolFehler}</div>`
+                : html`
+                  <div data-testid="wunsch-pool-liste" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;">
+                    ${spalte(1, '1. Wunsch')}
+                    ${spalte(2, '2. Wunsch')}
+                    ${spalte(3, '3. Wunsch')}
+                  </div>
+                  <p style="font-size:12px;color:var(--text-muted);margin:.75rem 0 0;">
+                    ${(poolRows || []).length} Nennungen · ${hier} davon bereits hier zugeteilt · ${(poolRows || []).length - hier} potenzielle Kandidaten.
+                  </p>`}
+          </div>`;
+      })()}
 
       <div class="table-wrapper">
         <table>
