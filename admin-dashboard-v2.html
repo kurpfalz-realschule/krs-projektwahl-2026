@@ -592,36 +592,39 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
         gesamt:    Number(r.gesamt)    || 0
       }));
     }
-    // v48: Wünsche EINES Schülers (1./2./3. Wahl mit Projekttitel) — für das
-    // Wünsche-Popover in der Zuteilungen-View. On-demand pro Klick, damit
-    // loadAll/Normalizer unangetastet bleiben und kein Massen-Payload entsteht.
-    // Demo:      aus window.mockSchueler[code].wahlen + window.mockProjekteData.
-    // Produktiv: read-only RPC admin_schueler_wahlen(p_code) (is_app_user-Gate).
-    async schuelerWahlen({ code }) {
-      const cleanCode = String(code || '').toUpperCase().trim();
-      if (!cleanCode) return [];
+    // v48: Namentliche Wunsch-Liste pro Projekt (wer hat es als 1./2./3. Wunsch
+    // gewählt). Liefert [{ projekt_id, prioritaet, code, vorname, nachname,
+    // klasse, klassenstufe }].
+    // Demo:      clientseitig aus window.mockSchueler[*].wahlen.
+    // Produktiv: read-only RPC admin_projekt_wahl_namen(p_projekt_id) — server-
+    //            seitig auf Projektleitung/Admin beschränkt (DSGVO-Gate, da hier
+    //            personenbezogene Einzelwahlen von Minderjährigen zurückkommen).
+    //            Rein lesend: kein INSERT/UPDATE/DELETE.
+    async projektWahlNamen(projektId) {
+      const pid = projektId || null;
       if (this.isDemo) {
         const list = (typeof window !== 'undefined' && window.mockSchueler) || [];
-        const s = list.find(x => String(x.code || '').toUpperCase() === cleanCode);
-        const w = s && s.wahlen;
-        if (!w) return [];
-        const projekte = (typeof window !== 'undefined' && window.mockProjekteData) || [];
-        const titel = (id) => {
-          const p = projekte.find(pp => pp.id === id);
-          return p ? p.titel : null;
+        const out = [];
+        const push = (s, id, prio) => {
+          if (!id || (pid && id !== pid)) return;
+          out.push({ projekt_id: id, prioritaet: prio, code: s.code,
+            vorname: s.vorname, nachname: s.nachname, klasse: s.klasse, klassenstufe: s.klassenstufe });
         };
-        return [
-          { wahl_nr: 1, projekt_id: w.erstwahl_id  || null, projekt_titel: titel(w.erstwahl_id) },
-          { wahl_nr: 2, projekt_id: w.zweitwahl_id || null, projekt_titel: titel(w.zweitwahl_id) },
-          { wahl_nr: 3, projekt_id: w.drittwahl_id || null, projekt_titel: titel(w.drittwahl_id) }
-        ].filter(r => r.projekt_id);
+        list.forEach(s => {
+          if (s && s.aktiv === false) return;
+          const w = s && s.wahlen; if (!w) return;
+          push(s, w.erstwahl_id, 1); push(s, w.zweitwahl_id, 2); push(s, w.drittwahl_id, 3);
+        });
+        return out;
       }
-      const { data, error } = await this.client.rpc('admin_schueler_wahlen', { p_code: cleanCode });
-      if (error) throw new Error('schuelerWahlen: ' + error.message);
+      const { data, error } = await this.client.rpc('admin_projekt_wahl_namen', { p_projekt_id: pid });
+      if (error) throw new Error('projektWahlNamen: ' + error.message);
       return (data || []).map(r => ({
-        wahl_nr: Number(r.wahl_nr) || 0,
         projekt_id: r.projekt_id,
-        projekt_titel: r.projekt_titel || null
+        prioritaet: Number(r.prioritaet) || 0,
+        code: r.schueler_code,
+        vorname: r.vorname, nachname: r.nachname,
+        klasse: r.klasse, klassenstufe: r.klassenstufe
       }));
     }
     // v40: Schüler aktiv/inaktiv schalten. Inaktiv = von Wahl + Verlosung
@@ -5478,6 +5481,33 @@ function StatistikView({ phase, refreshKey }) {
     return () => { alive = false; };
   }, [service, refreshKey]);
 
+  // v48: Namentliche Wunsch-Liste pro Projekt (wer hat 1./2./3. gewählt).
+  // Nur in der Statistik-Section sichtbar → bereits auf super_admin +
+  // projektleitung beschränkt (ALLOWED_SECTIONS). Die RPC ist zusätzlich
+  // serverseitig gegated. Rein lesend.
+  const [namenProjektId, setNamenProjektId] = useState('');
+  const [namenRows, setNamenRows] = useState(null); // null=nichts gewählt, []=leer/lädt
+  const [namenLaedt, setNamenLaedt] = useState(false);
+  const [namenFehler, setNamenFehler] = useState(null);
+  const [namenFilter, setNamenFilter] = useState('');
+  useEffect(() => {
+    if (!namenProjektId) { setNamenRows(null); setNamenFehler(null); return; }
+    let alive = true;
+    setNamenLaedt(true); setNamenFehler(null);
+    (async () => {
+      try {
+        const rows = await service.projektWahlNamen(namenProjektId);
+        if (alive) setNamenRows(Array.isArray(rows) ? rows : []);
+      } catch (e) {
+        console.warn('[KRS] projektWahlNamen:', e);
+        if (alive) { setNamenRows([]); setNamenFehler(e.message || 'Laden fehlgeschlagen'); }
+      } finally {
+        if (alive) setNamenLaedt(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [service, namenProjektId, refreshKey]);
+
   const daten = useMemo(() => {
     const schueler = (mockSchueler || []).filter(istAktivS);
     const projekte = (mockProjekteData || []);
@@ -5563,6 +5593,70 @@ function StatistikView({ phase, refreshKey }) {
             </div>
           `)}
           <p style="font-size:12px;color:var(--text-muted);margin-top:.75rem;margin-bottom:0;">Gesamt ${wahlSumme} Nennungen über ${wahlRows.filter(r => r.gesamt > 0).length} Projekte. ★ Erstwahl wird in der Verlosung priorisiert.</p>
+        </div>`;
+    })()}
+    ${(() => {
+      // v48: namentliche Wunsch-Liste pro Projekt (read-only). Nur hier in der
+      // Statistik-Section → super_admin + projektleitung (ALLOWED_SECTIONS).
+      const projekte = [...(mockProjekteData || [])]
+        .sort((a, b) => String(a.titel || '').localeCompare(String(b.titel || ''), 'de'));
+      const q = namenFilter.trim().toLowerCase();
+      const match = (r) => !q || (`${r.klasse} ${r.vorname} ${r.nachname} ${r.code}`).toLowerCase().includes(q);
+      const grp = (prio) => (namenRows || []).filter(r => r.prioritaet === prio && match(r))
+        .sort((a, b) => String(a.klasse || '').localeCompare(String(b.klasse || ''), 'de')
+          || String(a.nachname || '').localeCompare(String(b.nachname || ''), 'de'));
+      const farbe = { 1: 'var(--krs-blau)', 2: 'var(--krs-orange)', 3: 'var(--krs-gelb)' };
+      const spalte = (prio, label) => {
+        const rows = grp(prio);
+        return html`
+          <div class="wahl-namen-spalte" data-testid=${"wahl-namen-spalte-" + prio}>
+            <div class="stat-label" style="font-weight:600;margin-bottom:.4rem;">
+              <span class="dot" style=${"background:" + farbe[prio]}></span> ${label}
+              <span style="color:var(--text-muted);font-weight:400;"> (${rows.length})</span>
+            </div>
+            ${rows.length === 0
+              ? html`<div class="empty-state" style="padding:.5rem;font-size:13px;">—</div>`
+              : html`<ul style="list-style:none;margin:0;padding:0;font-size:13px;line-height:1.7;">
+                  ${rows.map(r => html`<li key=${r.code}><strong>${r.klasse}</strong> · ${r.vorname} ${r.nachname}</li>`)}
+                </ul>`}
+          </div>`;
+      };
+      return html`
+        <div class="card" data-testid="wahl-namen-card">
+          <h2>🔎 Wer hat welches Projekt gewählt — namentlich</h2>
+          <p style="font-size:13px;color:var(--text-muted);margin-top:0;">
+            Für ein einzelnes Projekt: welche <strong>aktiven</strong> Schüler:innen es als 1./2./3. Wunsch hatten —
+            unabhängig von der Verlosung. Hilft, passende Umbuchungs-Kandidaten zu finden.
+            <strong>Personenbezogen — nur für Projektleitung/Admin.</strong>
+          </p>
+          <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;margin-bottom:.75rem;">
+            <select class="input" data-testid="wahl-namen-select" style="max-width:22rem;"
+                    value=${namenProjektId}
+                    onChange=${e => { setNamenProjektId(e.target.value); setNamenFilter(''); }}>
+              <option value="">Projekt wählen …</option>
+              ${projekte.map(p => html`<option key=${p.id} value=${p.id}>${p.titel || '(ohne Titel)'}${p.status === 'entwurf' ? ' ⚠️' : ''}</option>`)}
+            </select>
+            ${namenProjektId && html`
+              <input class="input" data-testid="wahl-namen-filter" style="max-width:16rem;" type="text"
+                     placeholder="Filter: Klasse oder Name …" value=${namenFilter}
+                     onInput=${e => setNamenFilter(e.target.value)} />`}
+          </div>
+          ${!namenProjektId
+            ? html`<div class="empty-state" style="padding:1rem;">Wähle oben ein Projekt, um zu sehen, wer es als 1./2./3. Wunsch gewählt hat.</div>`
+            : namenLaedt
+              ? html`<div class="empty-state" style="padding:1rem;">Lade Namen …</div>`
+              : namenFehler
+                ? html`<div class="empty-state" style="padding:1rem;color:var(--error);">Fehler: ${namenFehler}</div>`
+                : html`
+                  <div data-testid="wahl-namen-liste" class="wahl-namen-grid"
+                       style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;">
+                    ${spalte(1, '1. Wunsch')}
+                    ${spalte(2, '2. Wunsch')}
+                    ${spalte(3, '3. Wunsch')}
+                  </div>
+                  <p style="font-size:12px;color:var(--text-muted);margin:.75rem 0 0;">
+                    ${(namenRows || []).length} Nennungen für dieses Projekt${namenFilter ? ' · Filter aktiv' : ''}.
+                  </p>`}
         </div>`;
     })()}
     ${daten.rows.length === 0 ? html`
@@ -6088,48 +6182,6 @@ function ZuteilungenView({ setModal, refreshKey, reload }) {
     return out;
   }, [zuteilungen]);
 
-  // v48: Wünsche-Popover — zeigt die 1./2./3. Wahl des Schülers, zugeteiltes
-  // Projekt markiert. Daten on-demand per service.schuelerWahlen (kein loadAll-Eingriff).
-  const openWuensche = async (z) => {
-    let rows = [];
-    try {
-      rows = await service.schuelerWahlen({ code: z.schueler_code });
-    } catch (err) {
-      showToast('Wünsche konnten nicht geladen werden: ' + (err.message || err), 'error');
-      return;
-    }
-    const zugeteiltIstWunsch = rows.some(r => r.projekt_id && r.projekt_id === z.projekt_id);
-    setModal(html`
-      <div class="modal-overlay" onClick=${() => setModal(null)}>
-        <div class="modal-content" data-testid="wahlen-popover" onClick=${e => e.stopPropagation()}>
-          <button class="modal-close" onClick=${() => setModal(null)} aria-label="Schließen" title="Schließen (ESC)">×</button>
-          <h2>🎯 Wünsche: ${z.vorname} ${z.nachname}</h2>
-          <p><small><code>${z.schueler_code}</code> · ${z.klasse} · zugeteilt: <strong>${z.projekt_titel}</strong></small></p>
-          ${rows.length === 0 ? html`
-            <div class="alert alert-info">Keine Wahlen abgegeben — die Zuteilung erfolgte manuell.</div>
-          ` : html`
-            <div>
-              ${rows.map(r => html`
-                <div data-testid="wahlen-popover-row" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;">
-                  ${r.wahl_nr === 1 ? html`<span class="pill pill-success">1.</span>` :
-                    r.wahl_nr === 2 ? html`<span class="pill pill-info">2.</span>` :
-                    html`<span class="pill pill-warning">3.</span>`}
-                  <span style="flex:1;">${r.projekt_titel || '(Projekt gelöscht)'}</span>
-                  ${r.projekt_id === z.projekt_id ? html`<span class="pill pill-success">✓ zugeteilt</span>` : null}
-                </div>
-              `)}
-              ${!zugeteiltIstWunsch && html`
-                <div class="alert alert-warning" style="margin-top:6px;">
-                  Das zugeteilte Projekt war <strong>keiner</strong> der drei Wünsche (manuelle Zuteilung/Umbuchung).
-                </div>
-              `}
-            </div>
-          `}
-        </div>
-      </div>
-    `);
-  };
-
   // Umbuchen-Modal: zeigt aktuelle Zuteilung + Auswahl Zielprojekt + Begründung
   const openUmbuchen = (z) => {
     let neuesProjekt = null;
@@ -6262,15 +6314,10 @@ function ZuteilungenView({ setModal, refreshKey, reload }) {
                 <td>${z.klasse}</td>
                 <td>${z.projekt_titel}</td>
                 <td>
-                  <button data-testid="wahl-popover-btn" title="Wünsche des Schülers anzeigen" aria-label="Wünsche anzeigen"
-                          style="background:none;border:none;padding:0;cursor:pointer;font:inherit;display:inline-flex;align-items:center;gap:4px;"
-                          onClick=${() => openWuensche(z)}>
-                    ${z.wahl_nr === 1 ? html`<span class="pill pill-success">1.</span>` :
-                      z.wahl_nr === 2 ? html`<span class="pill pill-info">2.</span>` :
-                      z.wahl_nr === 3 ? html`<span class="pill pill-warning">3.</span>` :
-                      html`<span class="pill">manuell</span>`}
-                    <span style="color:var(--text-muted);font-size:11px;">▾</span>
-                  </button>
+                  ${z.wahl_nr === 1 ? html`<span class="pill pill-success">1.</span>` :
+                    z.wahl_nr === 2 ? html`<span class="pill pill-info">2.</span>` :
+                    z.wahl_nr === 3 ? html`<span class="pill pill-warning">3.</span>` :
+                    html`<span class="pill">manuell</span>`}
                 </td>
                 <td>
                   <button class="btn btn-ghost btn-small" onClick=${() => openUmbuchen(z)} disabled=${isDemo}>
